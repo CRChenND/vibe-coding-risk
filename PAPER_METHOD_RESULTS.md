@@ -196,9 +196,9 @@ Insight: CWE classes exhibit distinct causal signatures rather than a single uni
 
 Interpretation: mitigation should be CWE-aware: assistant-side generation constraints for assistant-driven CWE, and stronger input/context sanitization for user-driven CWE.
 
-Figure note: left panel shows CWE classes where assistant-driven ratio is dominant; right panel shows CWE classes where user-driven ratio is dominant.
+Figure note: each CWE row shows three ratios side by side (`assistant-driven`, `user-driven`, `unclear`) for direct comparison.
 
-![Attribution Source by CWE (Split by Dominant Source)](paper_figures/fig6_attribution_source_by_cwe.svg)
+![Attribution Source by CWE](paper_figures/fig6_attribution_source_by_cwe.svg)
 
 ## 3. Interpretation
 Overall, the evidence indicates that risk formation is both source-sensitive and trajectory-sensitive: assistant decisions dominate many classes, while degradation unfolds over multiple turns with substantial early failure risk.
