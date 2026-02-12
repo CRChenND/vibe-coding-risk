@@ -1,7 +1,7 @@
 # Trajectory Causal Attribution of Security Risks in Vibe-Coding Conversations
 
 ## Abstract
-This project studies how security risks emerge and evolve in assistant-generated coding conversations. We build a pipeline that starts from risky assistant outputs, traces conversational context, attributes root causes, and quantifies risk trajectories over turns. On 266 risky samples, we find that assistant-driven causes dominate (`55.26%` assistant-first vs `43.98%` user/context-first), with `assistant_over_implemented` as the largest attribution class (`48.12%`). Risk emergence is front-loaded (`59.49%` first appear at turn `0-1`) but escalation exhibits a long tail (mention-gap `p90=112`).
+This project studies how security risks emerge and evolve in assistant-generated coding conversations. We build a pipeline that starts from risky assistant outputs, traces conversational context, attributes root causes, and quantifies risk trajectories over turns. On 381 risky samples, assistant-driven causes dominate (`56.69%` assistant-first vs `41.73%` user/context-first), with `assistant_over_implemented` as the largest attribution class (`51.18%`). Risk emergence is front-loaded (`58.06%` first appear at turn `0-1`) but escalation shows a long tail (mention-gap `p90=112`).
 
 ## 1. Method
 
@@ -35,16 +35,17 @@ We compute four trajectory-oriented metrics:
 ## 2. Results (Current)
 
 ### 2.1 Dataset Size
-- Risky backtrace rows: `266`
-- Attribution rows: `266`
-- Joined analysis rows: `266`
+- Risky backtrace rows: `381`
+- Attribution rows: `381`
+- Joined analysis rows: `381`
+- Attribution fallback rows (`judge_error`): `6`
 
 ### 2.2 Root-Cause Attribution Distribution
-- `assistant_over_implemented`: `128/266` (`48.12%`)
-- `inherited_or_context_risk`: `90/266` (`33.83%`)
-- `user_requested_risk`: `27/266` (`10.15%`)
-- `assistant_hallucinated_risk`: `19/266` (`7.14%`)
-- `insufficient_evidence`: `2/266` (`0.75%`)
+- `assistant_over_implemented`: `195/381` (`51.18%`)
+- `inherited_or_context_risk`: `127/381` (`33.33%`)
+- `user_requested_risk`: `32/381` (`8.40%`)
+- `assistant_hallucinated_risk`: `21/381` (`5.51%`)
+- `insufficient_evidence`: `6/381` (`1.57%`)
 - `mixed_causality`: `0`
 
 ![Attribution Distribution](paper_figures/fig1_attribution_distribution.svg)
@@ -52,45 +53,47 @@ We compute four trajectory-oriented metrics:
 ### 2.3 CWE Concentration
 Top CWE categories in current risky set:
 
-- `CWE-312`: `82`
-- `CWE-79`: `45`
-- `CWE-UNKNOWN`: `33`
-- `CWE-459`: `22`
-- `CWE-327`: `18`
+- `CWE-312`: `110`
+- `CWE-79`: `59`
+- `CWE-UNKNOWN`: `44`
+- `CWE-327`: `32`
+- `CWE-459`: `32`
 
 ![Top CWE Counts](paper_figures/fig2_top_cwe_counts.svg)
 
 ### 2.4 Trajectory Findings
-- Emergence coverage (has first mention): `195/266`
-- Early emergence: `turn 0-1` accounts for `116/195` (`59.49%`)
+- Emergence coverage (has first mention): `279/381`
+- Early emergence: `turn 0-1` accounts for `162/279` (`58.06%`)
 - Escalation depth (median / p90):
-  - mention gap: `8 / 112`
-  - concretization gap: `14 / 98`
-  - persistence gap: `23 / 102`
+  - mention gap: `12 / 112`
+  - concretization gap: `14 / 104`
+  - persistence gap: `24 / 116`
 
 ![Risk Emergence by Turn Bucket](paper_figures/fig3_risk_emergence_bucket.svg)
 
 ### 2.5 Initiation and Regression
-- Assistant-first initiation (proxy): `147/266` (`55.26%`)
-- User/context-first initiation (proxy): `117/266` (`43.98%`)
-- Assistant security regression rate (proxy): `78/147` (`53.06%`)
+- Assistant-first initiation (proxy): `216/381` (`56.69%`)
+- User/context-first initiation (proxy): `159/381` (`41.73%`)
+- Unclear initiation: `6/381` (`1.57%`)
+- Assistant security regression rate (proxy): `121/216` (`56.02%`)
 
 Representative regression rates by CWE (`n>=5` assistant-driven cases):
-- `CWE-327`: `0.8889`
-- `CWE-200`: `0.8000`
-- `CWE-312`: `0.7667`
-- `CWE-522`: `0.7143`
-- `CWE-79`: `0.6190`
+- `CWE-522`: `0.8750`
+- `CWE-200`: `0.8125`
+- `CWE-327`: `0.7857`
+- `CWE-79`: `0.7097`
+- `CWE-312`: `0.6829`
 
 ![Assistant Regression by CWE](paper_figures/fig4_regression_by_cwe.svg)
 
 ## 3. Interpretation
-Current evidence indicates that a large fraction of risky behavior is introduced or amplified by assistant decisions rather than explicit user requests. Risks also tend to appear early but can continue degrading across many turns, suggesting that safety controls should be enforced throughout multi-turn generation, not only on first response.
+Current evidence indicates that risky behavior is more often introduced or amplified by assistant decisions than by explicit user requests. Risks also tend to appear early but can continue degrading across many turns, suggesting that safety controls should be enforced throughout multi-turn generation, not only on first response.
 
 ## 4. Threats to Validity
-- Attribution and initiation are model-assisted labels; some categories may be prompt-sensitive.
+- Attribution and initiation are model-assisted labels and can be prompt-sensitive.
 - `CWE-UNKNOWN` remains non-trivial, limiting fine-grained security interpretation.
 - Regression metric is proxy-based and should be complemented by human-annotated trajectory checkpoints.
+- A small subset (`6` rows) used error-fallback attribution and may add minor noise.
 
 ## 5. Reproducibility
 The numbers in this document are computed from:
