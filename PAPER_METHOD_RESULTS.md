@@ -31,43 +31,57 @@ For secondary analysis, sources are grouped as:
 - `unclear = {mixed_causality, insufficient_evidence}`
 
 ### 1.3 Trajectory Metrics (Meaning and Formula)
-Let sample `i` have:
+To reduce notation burden, we use one conversation sample as a running mental model:
 
-- `a_i`: assistant risky turn (`assistant_risk_turn`)
-- `m_i`: first mention turn (`first_mention_turn`)
-- `c_i`: first concretization turn (`first_concretization_turn`)
-- `p_i`: first persistence turn (`first_persistence_turn`)
+- `a`: turn where the assistant output is finally judged risky
+- `m`: first turn where the risky concept is mentioned
+- `c`: first turn where it becomes concrete/actionable
+- `p`: first later turn where it is repeated/preserved
 
-Metrics:
+If a sample has `m=1, c=3, p=7, a=12`, then:
+- mention gap = `12-1=11`
+- concretization gap = `12-3=9`
+- persistence gap = `12-7=5`
 
-1. Risk Emergence Position
-`P(first appears at turn t) = |{i : m_i = t}| / N_cov`, where `N_cov = |{i : m_i is observed}|`.
+We use six metrics:
 
-2. Risk Escalation Depth
-- Mention gap: `g_m(i) = a_i - m_i`
-- Concretization gap: `g_c(i) = a_i - c_i`
-- Persistence gap: `g_p(i) = a_i - p_i`
-We report distribution summaries (median, p90).
+1. Risk Emergence Position  
+Meaning: at which turn risk first shows up across conversations.  
+Computation: for turn `t`,  
+`P(first appears at t) = (# samples with m=t) / (# samples with observed m)`.
 
-3. User vs Assistant Initiation (proxy)
-`assistant_first_ratio = |assistant_driven| / N`
-`user_first_ratio = |user_driven| / N`
+2. Risk Escalation Depth  
+Meaning: how many turns it takes to move from early signal to final risky output.  
+Computation:
+- mention gap = `a - m`
+- concretization gap = `a - c`
+- persistence gap = `a - p`  
+Reported as distribution summaries (median, p90).
 
-4. Assistant Security Regression Rate (proxy)
-On assistant-driven subset `A`:
-`regression_rate = |{i in A : m_i < a_i}| / |A|`
+3. User vs Assistant Initiation (proxy)  
+Meaning: who mainly starts the insecure direction.  
+Computation:
+- `assistant_first_ratio = (# assistant_driven samples) / N`
+- `user_first_ratio = (# user_driven samples) / N`
 
-5. Temporal Security Degradation Curve
-Discrete-time survival with first-risk events and right censoring:
-- `n_t`: at-risk samples at turn `t`
-- `d_t`: newly emerged risk events at turn `t`
-- `S(t) = Π_{k<=t}(1 - d_k / n_k)`
+4. Assistant Security Regression Rate (proxy)  
+Meaning: among assistant-driven samples, how often the assistant drifts from earlier safer state into risky output.  
+Computation on assistant-driven subset `A`:
+`regression_rate = (# samples in A with m < a) / |A|`.
+
+5. Temporal Security Degradation Curve  
+Meaning: probability that a conversation is still secure by turn `t`.  
+Computation (discrete-time survival):
+- `n_t`: samples still at risk set at turn `t`
+- `d_t`: new risk-emergence events at turn `t`
+- `S(t) = Π_{k<=t}(1 - d_k / n_k)`  
 Interpretation: `S(t) = P(remaining secure | turn t)`.
 
-6. Risk Introduction Source vs CWE
-For each CWE `x`:
-`assistant_ratio(x) = n_assistant_driven(x) / n_total(x)`
-`user_ratio(x) = n_user_driven(x) / n_total(x)`
+6. Risk Introduction Source vs CWE  
+Meaning: for each CWE class, whether it is mostly assistant-driven or user-driven.  
+Computation for CWE `x`:
+- `assistant_ratio(x) = n_assistant_driven(x) / n_total(x)`
+- `user_ratio(x) = n_user_driven(x) / n_total(x)`
 
 ## 2. Results
 
@@ -95,7 +109,21 @@ Interpretation: risk control should prioritize assistant generation policy and c
 
 ![Attribution Distribution](paper_figures/fig1_attribution_distribution.svg)
 
-### 2.3 CWE Concentration
+### 2.3 CWE Interpretation Guide (for Non-Security Readers)
+| CWE | Plain Meaning | Example | Why It Matters |
+|---|---|---|---|
+| `CWE-312` | Sensitive information stored in plain text. | `OPENROUTER_API_KEY=sk-xxxx` in `.env` committed/logged. | Anyone with file/log access can directly reuse credentials. |
+| `CWE-79` | Untrusted input rendered as HTML/JS (XSS). | `element.innerHTML = userComment` | Attacker script executes in victim browser session. |
+| `CWE-327` | Weak/deprecated crypto algorithm is used. | `hashlib.md5(password.encode())` | Protection can be cracked or bypassed more easily. |
+| `CWE-459` | Temporary/sensitive artifacts are not cleaned up. | `cp secrets.json /tmp/deploy-debug.json` and never removed | Residual files become unintended data exposure surfaces. |
+| `CWE-522` | Credentials are insufficiently protected in storage/transit. | `Authorization: Basic base64(user:pass)` over unsafe channel | Credentials can be intercepted or recovered. |
+| `CWE-200` | Sensitive internal information is exposed. | Error response contains DSN/password | Private data leakage helps attackers pivot. |
+| `CWE-20` | Input validation is incomplete or missing. | User-controlled `id` used without checks | Malicious input can trigger unsafe behavior/injection paths. |
+| `CWE-306` | Critical function lacks authentication. | `/admin/reset-db` callable without auth | Anyone can trigger privileged operations. |
+| `CWE-321` | Cryptographic key is hard-coded. | `const KEY = 'my-static-key-123'` | Code leak implies key leak and decryptability. |
+| `CWE-UNKNOWN` | Risk detected but not confidently mapped to a specific CWE. | Judge flags risk with ambiguous taxonomy | Treat as real risk signal with unresolved label granularity. |
+
+### 2.4 CWE Concentration
 Top CWE categories in current risky set:
 
 - `CWE-312`: `110`
@@ -110,7 +138,7 @@ Interpretation: targeted mitigation on top CWE buckets is likely to produce disp
 
 ![Top CWE Counts](paper_figures/fig2_top_cwe_counts.svg)
 
-### 2.4 Trajectory Findings
+### 2.5 Trajectory Findings
 - Emergence coverage (has first mention): `279/381`
 - Early emergence: `turn 0-1` accounts for `162/279` (`58.06%`)
 - Escalation depth (median / p90):
@@ -124,7 +152,7 @@ Interpretation: first-turn safeguards are necessary but insufficient; sustained 
 
 ![Risk Emergence by Turn Bucket](paper_figures/fig3_risk_emergence_bucket.svg)
 
-### 2.5 Initiation and Regression
+### 2.6 Initiation and Regression
 - Assistant-first initiation (proxy): `216/381` (`56.69%`)
 - User/context-first initiation (proxy): `159/381` (`41.73%`)
 - Unclear initiation: `6/381` (`1.57%`)
@@ -143,7 +171,7 @@ Interpretation: this pattern supports guardrails that monitor not only initial r
 
 ![Assistant Regression by CWE](paper_figures/fig4_regression_by_cwe.svg)
 
-### 2.6 Temporal Security Degradation Curves
+### 2.7 Temporal Security Degradation Curves
 Using turn-level first-risk events (`first_mention_turn`) and right-censoring when no mention is found before the risky assistant turn, we estimate a discrete-time survival curve.
 
 - `P(remaining secure | turn t)` drops from `0.8924` at `t=0` to `0.5748` at `t=1`
@@ -156,7 +184,7 @@ Interpretation: intervention latency matters. Delayed safeguards will miss a lar
 
 ![Temporal Security Degradation Curve](paper_figures/fig5_temporal_survival_curve.svg)
 
-### 2.7 Risk Introduction Source vs CWE
+### 2.8 Risk Introduction Source vs CWE
 We aggregate source attribution into three buckets (`assistant_driven`, `user_driven`, `unclear`) and compute per-CWE distributions.
 
 Examples from high-frequency CWE groups:
@@ -168,21 +196,9 @@ Insight: CWE classes exhibit distinct causal signatures rather than a single uni
 
 Interpretation: mitigation should be CWE-aware: assistant-side generation constraints for assistant-driven CWE, and stronger input/context sanitization for user-driven CWE.
 
-![Attribution Source by CWE](paper_figures/fig6_attribution_source_by_cwe.svg)
+Figure note: left panel shows CWE classes where assistant-driven ratio is dominant; right panel shows CWE classes where user-driven ratio is dominant.
 
-### 2.8 CWE Interpretation Guide (for Non-Security Readers)
-| CWE | Plain Meaning | Example | Why It Matters |
-|---|---|---|---|
-| `CWE-312` | Sensitive information stored in plain text. | `OPENROUTER_API_KEY=sk-xxxx` in `.env` committed/logged. | Anyone with file/log access can directly reuse credentials. |
-| `CWE-79` | Untrusted input rendered as HTML/JS (XSS). | `element.innerHTML = userComment` | Attacker script executes in victim browser session. |
-| `CWE-327` | Weak/deprecated crypto algorithm is used. | `hashlib.md5(password.encode())` | Protection can be cracked or bypassed more easily. |
-| `CWE-459` | Temporary/sensitive artifacts are not cleaned up. | `cp secrets.json /tmp/deploy-debug.json` and never removed | Residual files become unintended data exposure surfaces. |
-| `CWE-522` | Credentials are insufficiently protected in storage/transit. | `Authorization: Basic base64(user:pass)` over unsafe channel | Credentials can be intercepted or recovered. |
-| `CWE-200` | Sensitive internal information is exposed. | Error response contains DSN/password | Private data leakage helps attackers pivot. |
-| `CWE-20` | Input validation is incomplete or missing. | User-controlled `id` used without checks | Malicious input can trigger unsafe behavior/injection paths. |
-| `CWE-306` | Critical function lacks authentication. | `/admin/reset-db` callable without auth | Anyone can trigger privileged operations. |
-| `CWE-321` | Cryptographic key is hard-coded. | `const KEY = 'my-static-key-123'` | Code leak implies key leak and decryptability. |
-| `CWE-UNKNOWN` | Risk detected but not confidently mapped to a specific CWE. | Judge flags risk with ambiguous taxonomy | Treat as real risk signal with unresolved label granularity. |
+![Attribution Source by CWE (Split by Dominant Source)](paper_figures/fig6_attribution_source_by_cwe.svg)
 
 ## 3. Interpretation
 Overall, the evidence indicates that risk formation is both source-sensitive and trajectory-sensitive: assistant decisions dominate many classes, while degradation unfolds over multiple turns with substantial early failure risk.
