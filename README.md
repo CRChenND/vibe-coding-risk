@@ -20,6 +20,7 @@ This project analyzes assistant-generated code/replies in chat logs and maps ris
 - `analysis/scripts/extract_candidates.py`: Extracts analyzable assistant outputs from chats
 - `analysis/scripts/run_static_hybrid.py`: Runs static analysis (CodeQL first, Semgrep fallback)
 - `analysis/scripts/judge_openrouter.py`: Runs LLM-as-a-judge via OpenRouter
+- `analysis/scripts/backtrace_risky_user_context.py`: Backtraces risky findings to user+assistant context
 - `analysis/schema/candidate_record.schema.json`: Schema for extracted candidates
 - `analysis/schema/risk_finding.schema.json`: Schema for findings
 - `analysis/prompts/judge_v1.md`: Prompt template for LLM judge
@@ -269,3 +270,37 @@ Output format follows `analysis/schema/risk_finding.schema.json`.
 Prompt note:
 
 - `analysis/prompts/judge_v1.md` explicitly asks the judge not to classify normal devops/git operations (for example `git reset --hard`, `git push --force`) as security vulnerabilities unless there is clear exploit/security impact.
+
+### 4. Backtrace risky findings to user and assistant context
+
+This step links risky judge findings back to:
+
+- nearest user prompt(s) before the risky assistant output
+- extracted user command-like strings
+- assistant block text and the matched risky candidate text
+
+Smoke test (first 200 finding lines):
+
+```bash
+uv run python analysis/scripts/backtrace_risky_user_context.py \
+  --judge-findings analysis/output/judge_findings_all.jsonl \
+  --chats-dir data/chats \
+  --out analysis/output/risky_backtrace_sample.jsonl \
+  --csv-out analysis/output/risky_backtrace_sample.csv \
+  --limit 200
+```
+
+Full run:
+
+```bash
+uv run python analysis/scripts/backtrace_risky_user_context.py \
+  --judge-findings analysis/output/judge_findings_all.jsonl \
+  --chats-dir data/chats \
+  --out analysis/output/risky_backtrace_all.jsonl \
+  --csv-out analysis/output/risky_backtrace_all.csv
+```
+
+Useful flags:
+
+- `--lookback-users 3` to include up to N previous user messages
+- `--all-findings` to include non-risky findings too (default is risky-only)

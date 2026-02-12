@@ -1083,7 +1083,7 @@ def main() -> None:
     mode = "ab" if args.resume else "wb"
     resume_state.parent.mkdir(parents=True, exist_ok=True)
 
-    with args.out.open(mode) as wf, resume_state.open("a", encoding="utf-8") as sf:
+    with args.out.open(mode) as wf, resume_state.open("a", encoding="utf-8") as checkpoint_f:
         for repo_full_name in tqdm(sorted(chats_by_repo.keys()), desc="static-per-repo"):
             if repo_full_name in done_repos:
                 counts["repos_skipped_resume"] += 1
@@ -1104,10 +1104,10 @@ def main() -> None:
                                 config=args.semgrep_config,
                                 timeout_sec=args.timeout_sec,
                             )
-                        sf, se = semgrep_snippet_cache[cache_key]
+                        semgrep_findings, se = semgrep_snippet_cache[cache_key]
                         if se:
                             errors.append(f"{snip.get('candidate_id')}::{se}")
-                        for item in sf:
+                        for item in semgrep_findings:
                             rec = finding_record(
                                 str(snip.get("candidate_id")),
                                 analyzer="static_rule",
@@ -1123,8 +1123,8 @@ def main() -> None:
                             wf.write(orjson.dumps(rec) + b"\n")
                             counts["findings"] += 1
                     counts["semgrep_repo_fallback_to_snippet"] += 1
-                sf.write(orjson.dumps({"repo_full_name": repo_full_name}).decode("utf-8") + "\n")
-                sf.flush()
+                    checkpoint_f.write(orjson.dumps({"repo_full_name": repo_full_name}).decode("utf-8") + "\n")
+                    checkpoint_f.flush()
                 done_repos.add(repo_full_name)
                 continue
 
@@ -1183,10 +1183,10 @@ def main() -> None:
                                 config=args.semgrep_config,
                                 timeout_sec=args.timeout_sec,
                             )
-                        sf, se = semgrep_snippet_cache[cache_key]
+                        semgrep_findings, se = semgrep_snippet_cache[cache_key]
                         if se:
                             errors.append(f"{snip.get('candidate_id')}::{se}")
-                        for item in sf:
+                        for item in semgrep_findings:
                             rec = finding_record(
                                 str(snip.get("candidate_id")),
                                 analyzer="static_rule",
@@ -1384,8 +1384,8 @@ def main() -> None:
                     wf.write(orjson.dumps(rec) + b"\n")
                     counts["findings"] += 1
 
-            sf.write(orjson.dumps({"repo_full_name": repo_full_name}).decode("utf-8") + "\n")
-            sf.flush()
+            checkpoint_f.write(orjson.dumps({"repo_full_name": repo_full_name}).decode("utf-8") + "\n")
+            checkpoint_f.flush()
             done_repos.add(repo_full_name)
 
     summary = {
