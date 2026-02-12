@@ -86,6 +86,29 @@ Representative regression rates by CWE (`n>=5` assistant-driven cases):
 
 ![Assistant Regression by CWE](paper_figures/fig4_regression_by_cwe.svg)
 
+### 2.6 Temporal Security Degradation Curves
+Using turn-level first-risk events (`first_mention_turn`) and right-censoring when no mention is found before the risky assistant turn, we estimate a discrete-time survival curve:
+
+- `P(remaining secure | turn t)` drops from `0.8924` at `t=0` to `0.5748` at `t=1`
+- By `t=5`, remaining-secure probability is `0.4454`
+- By `t=20`, remaining-secure probability is `0.2827`
+
+This shows a sharp early degradation followed by a long-tail decline.
+
+![Temporal Security Degradation Curve](paper_figures/fig5_temporal_survival_curve.svg)
+
+### 2.7 Risk Introduction Source vs CWE
+We aggregate source attribution into three buckets (`assistant_driven`, `user_driven`, `unclear`) and compute per-CWE distributions.
+
+Examples from high-frequency CWE groups:
+
+- Strong assistant-driven: `CWE-459 (1.0000)`, `CWE-306 (0.9231)`, `CWE-200 (0.8000)`
+- Strong user-driven: `CWE-312 (0.5727)`, `CWE-327 (0.5625)`, `CWE-UNKNOWN (0.5909)`
+
+This separation highlights where model-side mitigation should be prioritized vs where user/context filtering is more impactful.
+
+![Attribution Source by CWE](paper_figures/fig6_attribution_source_by_cwe.svg)
+
 ## 3. Interpretation
 Current evidence indicates that risky behavior is more often introduced or amplified by assistant decisions than by explicit user requests. Risks also tend to appear early but can continue degrading across many turns, suggesting that safety controls should be enforced throughout multi-turn generation, not only on first response.
 
@@ -102,6 +125,8 @@ The numbers in this document are computed from:
 - `analysis/output/attribution_analysis_all/cwe_attribution.csv`
 - `analysis/output/trajectory_analysis_all/summary.json`
 - `analysis/output/trajectory_analysis_all/assistant_regression_by_cwe.csv`
+- `analysis/output/trajectory_analysis_all/temporal_security_degradation_curve.csv`
+- `analysis/output/trajectory_analysis_all/attribution_source_by_cwe.csv`
 
 Figures are generated into tracked assets under:
 
@@ -109,3 +134,5 @@ Figures are generated into tracked assets under:
 - `paper_figures/fig2_top_cwe_counts.svg`
 - `paper_figures/fig3_risk_emergence_bucket.svg`
 - `paper_figures/fig4_regression_by_cwe.svg`
+- `paper_figures/fig5_temporal_survival_curve.svg`
+- `paper_figures/fig6_attribution_source_by_cwe.svg`

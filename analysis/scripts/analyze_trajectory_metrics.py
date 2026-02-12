@@ -102,6 +102,14 @@ def write_csv(path: Path, rows: list[dict[str, Any]], fieldnames: list[str]) -> 
             w.writerow({k: row.get(k) for k in fieldnames})
 
 
+def source_bucket(primary_cause: str) -> str:
+    if primary_cause in ASSISTANT_DRIVEN:
+        return "assistant_driven"
+    if primary_cause in USER_OR_CONTEXT_DRIVEN:
+        return "user_driven"
+    return "unclear"
+
+
 def main() -> None:
     args = parse_args()
     args.out_dir.mkdir(parents=True, exist_ok=True)
@@ -131,6 +139,13 @@ def main() -> None:
     # Security degradation trajectory proxy via gap buckets x severity
     severity_by_bucket: dict[str, Counter[str]] = defaultdict(Counter)
 
+    # Analysis A: temporal degradation / survival
+    event_turns: list[int] = []
+    censor_turns: list[int] = []
+
+    # Analysis B: source vs CWE
+    source_by_cwe: dict[str, Counter[str]] = defaultdict(Counter)
+
     per_sample_rows: list[dict[str, Any]] = []
 
     for e in enriched_rows:
@@ -153,6 +168,7 @@ def main() -> None:
 
         if fm is not None:
             emergence_counter[fm] += 1
+            event_turns.append(fm)
             if fm <= 1:
                 emergence_bucket_counter["0-1"] += 1
             elif fm <= 3:
@@ -163,6 +179,9 @@ def main() -> None:
                 emergence_bucket_counter["8-15"] += 1
             else:
                 emergence_bucket_counter["16+"] += 1
+        elif ar is not None:
+            # Right-censored: no clear first mention found up to observed risky turn.
+            censor_turns.append(ar)
 
         if mg is not None:
             mention_gaps.append(mg)
@@ -186,6 +205,11 @@ def main() -> None:
             for cwe in str(e.get("cwe", "")).split("|"):
                 if cwe:
                     reg_by_cwe[cwe].append(is_regressed)
+
+        src = source_bucket(cause)
+        for cwe in str(e.get("cwe", "")).split("|"):
+            if cwe:
+                source_by_cwe[cwe][src] += 1
 
         severity_by_bucket[gap_bucket(mg)][severity] += 1
 
@@ -258,6 +282,65 @@ def main() -> None:
             }
         )
 
+    # Analysis A: Temporal security degradation curve (discrete-time Kaplan-Meier style).
+    max_turn = 0
+    if event_turns:
+        max_turn = max(max_turn, max(event_turns))
+    if censor_turns:
+        max_turn = max(max_turn, max(censor_turns))
+
+    total_rows = len(enriched_rows)
+    event_counter = Counter(event_turns)
+    censor_counter = Counter(censor_turns)
+    temporal_rows: list[dict[str, Any]] = []
+
+    survival = 1.0
+    cumulative_events = 0
+    for turn in range(max_turn + 1):
+        at_risk = 0
+        for et in event_turns:
+            if et >= turn:
+                at_risk += 1
+        for ct in censor_turns:
+            if ct >= turn:
+                at_risk += 1
+
+        events = event_counter[turn]
+        censored = censor_counter[turn]
+        cumulative_events += events
+        hazard = (events / at_risk) if at_risk else 0.0
+        if at_risk and events:
+            survival *= (1.0 - hazard)
+        temporal_rows.append(
+            {
+                "turn": turn,
+                "at_risk": at_risk,
+                "new_risk_events": events,
+                "new_censored": censored,
+                "risk_probability_turn": round(events / total_rows, 6) if total_rows else 0.0,
+                "hazard": round(hazard, 6),
+                "survival_remaining_secure": round(survival, 6),
+                "cumulative_risk_probability": round(cumulative_events / total_rows, 6) if total_rows else 0.0,
+            }
+        )
+
+    # Analysis B: Attribution source vs CWE.
+    source_cwe_rows: list[dict[str, Any]] = []
+    for cwe, cnt in sorted(source_by_cwe.items(), key=lambda x: (-sum(x[1].values()), x[0])):
+        total = sum(cnt.values())
+        source_cwe_rows.append(
+            {
+                "cwe": cwe,
+                "total": total,
+                "assistant_driven": cnt["assistant_driven"],
+                "assistant_driven_ratio": safe_prob(cnt["assistant_driven"], total),
+                "user_driven": cnt["user_driven"],
+                "user_driven_ratio": safe_prob(cnt["user_driven"], total),
+                "unclear": cnt["unclear"],
+                "unclear_ratio": safe_prob(cnt["unclear"], total),
+            }
+        )
+
     summary = {
         "n_enriched_rows": len(enriched_rows),
         "n_tracing_rows": len(tracing_rows),
@@ -291,6 +374,12 @@ def main() -> None:
             "numerator": reg_num,
             "denominator_assistant_driven": reg_den,
             "rate": safe_prob(reg_num, reg_den),
+        },
+        "temporal_security_degradation": {
+            "covered_events": len(event_turns),
+            "covered_censored": len(censor_turns),
+            "max_turn_in_curve": max_turn,
+            "final_survival_remaining_secure": temporal_rows[-1]["survival_remaining_secure"] if temporal_rows else None,
         },
     }
 
@@ -332,6 +421,34 @@ def main() -> None:
         args.out_dir / "severity_by_mention_gap_bucket.csv",
         severity_bucket_rows,
         ["gap_bucket", "total", "none", "low", "medium", "high", "critical", "high_or_critical_ratio"],
+    )
+    write_csv(
+        args.out_dir / "temporal_security_degradation_curve.csv",
+        temporal_rows,
+        [
+            "turn",
+            "at_risk",
+            "new_risk_events",
+            "new_censored",
+            "risk_probability_turn",
+            "hazard",
+            "survival_remaining_secure",
+            "cumulative_risk_probability",
+        ],
+    )
+    write_csv(
+        args.out_dir / "attribution_source_by_cwe.csv",
+        source_cwe_rows,
+        [
+            "cwe",
+            "total",
+            "assistant_driven",
+            "assistant_driven_ratio",
+            "user_driven",
+            "user_driven_ratio",
+            "unclear",
+            "unclear_ratio",
+        ],
     )
 
     (args.out_dir / "summary.json").write_bytes(orjson.dumps(summary, option=orjson.OPT_INDENT_2))

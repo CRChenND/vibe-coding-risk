@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1040" height="620" viewBox="0 0 1040 620">
+<rect width="100%" height="100%" fill="white"/>
+<text x="520" y="38" text-anchor="middle" font-family="Arial" font-size="26" font-weight="700">Attribution Source vs CWE (Top 10)</text>
+<line x1="170" y1="530" x2="990" y2="530" stroke="#222" stroke-width="2"/>
+<line x1="170" y1="70" x2="170" y2="530" stroke="#222" stroke-width="2"/>
+<line x1="170.00" y1="70" x2="170.00" y2="530" stroke="#efefef" stroke-width="1"/>
+<text x="170.00" y="554" text-anchor="middle" font-family="Arial" font-size="12" fill="#444">0.0</text>
+<line x1="334.00" y1="70" x2="334.00" y2="530" stroke="#efefef" stroke-width="1"/>
+<text x="334.00" y="554" text-anchor="middle" font-family="Arial" font-size="12" fill="#444">0.2</text>
+<line x1="498.00" y1="70" x2="498.00" y2="530" stroke="#efefef" stroke-width="1"/>
+<text x="498.00" y="554" text-anchor="middle" font-family="Arial" font-size="12" fill="#444">0.4</text>
+<line x1="662.00" y1="70" x2="662.00" y2="530" stroke="#efefef" stroke-width="1"/>
+<text x="662.00" y="554" text-anchor="middle" font-family="Arial" font-size="12" fill="#444">0.6</text>
+<line x1="826.00" y1="70" x2="826.00" y2="530" stroke="#efefef" stroke-width="1"/>
+<text x="826.00" y="554" text-anchor="middle" font-family="Arial" font-size="12" fill="#444">0.8</text>
+<line x1="990.00" y1="70" x2="990.00" y2="530" stroke="#efefef" stroke-width="1"/>
+<text x="990.00" y="554" text-anchor="middle" font-family="Arial" font-size="12" fill="#444">1.0</text>
+<text x="158" y="97.00" text-anchor="end" font-family="Arial" font-size="12" fill="#333">CWE-312</text>
+<rect x="170" y="80.88" width="305.61" height="10.12" fill="#1f77b4"/>
+<rect x="170" y="93.00" width="469.61" height="10.12" fill="#2ca02c"/>
+<rect x="170" y="105.12" width="44.69" height="10.12" fill="#ff7f0e"/>
+<text x="158" y="143.00" text-anchor="end" font-family="Arial" font-size="12" fill="#333">CWE-79</text>
+<rect x="170" y="126.88" width="430.83" height="10.12" fill="#1f77b4"/>
+<rect x="170" y="139.00" width="389.17" height="10.12" fill="#2ca02c"/>
+<rect x="170" y="151.12" width="0.00" height="10.12" fill="#ff7f0e"/>
+<text x="158" y="189.00" text-anchor="end" font-family="Arial" font-size="12" fill="#333">CWE-UNKNOWN</text>
+<rect x="170" y="172.88" width="335.46" height="10.12" fill="#1f77b4"/>
+<rect x="170" y="185.00" width="484.54" height="10.12" fill="#2ca02c"/>
+<rect x="170" y="197.12" width="0.00" height="10.12" fill="#ff7f0e"/>
+<text x="158" y="235.00" text-anchor="end" font-family="Arial" font-size="12" fill="#333">CWE-327</text>
+<rect x="170" y="218.88" width="358.75" height="10.12" fill="#1f77b4"/>
+<rect x="170" y="231.00" width="461.25" height="10.12" fill="#2ca02c"/>
+<rect x="170" y="243.12" width="0.00" height="10.12" fill="#ff7f0e"/>
+<text x="158" y="281.00" text-anchor="end" font-family="Arial" font-size="12" fill="#333">CWE-459</text>
+<rect x="170" y="264.88" width="820.00" height="10.12" fill="#1f77b4"/>
+<rect x="170" y="277.00" width="0.00" height="10.12" fill="#2ca02c"/>
+<rect x="170" y="289.12" width="0.00" height="10.12" fill="#ff7f0e"/>
+<text x="158" y="327.00" text-anchor="end" font-family="Arial" font-size="12" fill="#333">CWE-522</text>
+<rect x="170" y="310.88" width="570.47" height="10.12" fill="#1f77b4"/>
+<rect x="170" y="323.00" width="249.53" height="10.12" fill="#2ca02c"/>
+<rect x="170" y="335.12" width="0.00" height="10.12" fill="#ff7f0e"/>
+<text x="158" y="373.00" text-anchor="end" font-family="Arial" font-size="12" fill="#333">CWE-200</text>
+<rect x="170" y="356.88" width="656.00" height="10.12" fill="#1f77b4"/>
+<rect x="170" y="369.00" width="164.00" height="10.12" fill="#2ca02c"/>
+<rect x="170" y="381.12" width="0.00" height="10.12" fill="#ff7f0e"/>
+<text x="158" y="419.00" text-anchor="end" font-family="Arial" font-size="12" fill="#333">CWE-20</text>
+<rect x="170" y="402.88" width="585.73" height="10.12" fill="#1f77b4"/>
+<rect x="170" y="415.00" width="234.27" height="10.12" fill="#2ca02c"/>
+<rect x="170" y="427.12" width="0.00" height="10.12" fill="#ff7f0e"/>
+<text x="158" y="465.00" text-anchor="end" font-family="Arial" font-size="12" fill="#333">CWE-306</text>
+<rect x="170" y="448.88" width="756.94" height="10.12" fill="#1f77b4"/>
+<rect x="170" y="461.00" width="63.06" height="10.12" fill="#2ca02c"/>
+<rect x="170" y="473.12" width="0.00" height="10.12" fill="#ff7f0e"/>
+<text x="158" y="511.00" text-anchor="end" font-family="Arial" font-size="12" fill="#333">CWE-321</text>
+<rect x="170" y="494.88" width="615.00" height="10.12" fill="#1f77b4"/>
+<rect x="170" y="507.00" width="205.00" height="10.12" fill="#2ca02c"/>
+<rect x="170" y="519.12" width="0.00" height="10.12" fill="#ff7f0e"/>
+<rect x="680" y="80" width="14" height="14" fill="#1f77b4"/><text x="700" y="92" font-family="Arial" font-size="13">assistant-driven ratio</text>
+<rect x="680" y="102" width="14" height="14" fill="#2ca02c"/><text x="700" y="114" font-family="Arial" font-size="13">user-driven ratio</text>
+<rect x="680" y="124" width="14" height="14" fill="#ff7f0e"/><text x="700" y="136" font-family="Arial" font-size="13">unclear ratio</text>
+<text x="580.00" y="595" text-anchor="middle" font-family="Arial" font-size="14" fill="#444">Ratio</text>
+</svg>
