@@ -1,0 +1,21 @@
+# Dataset
+data/
+
+# Environment
+.env
+.venv/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Build / tooling
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Analysis outputs
+analysis/output/*.json
+analysis/output/*.jsonl
+

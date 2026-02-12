@@ -1,0 +1,83 @@
+# Seed rule set for fast baseline static screening.
+# You can extend this file with language-specific patterns later.
+
+rules:
+  - rule_id: CMD-CURL-PIPE-BASH
+    candidate_type: command
+    cwe: ["CWE-78"]
+    severity: high
+    confidence: 0.9
+    description: Piping remote script to shell.
+    regex: "(?i)curl\\s+[^|\\n]+\\|\\s*(bash|sh|zsh|powershell|pwsh)"
+
+  - rule_id: CMD-WGET-PIPE-BASH
+    candidate_type: command
+    cwe: ["CWE-78"]
+    severity: high
+    confidence: 0.9
+    description: Piping wget output to shell.
+    regex: "(?i)wget\\s+[^|\\n]+\\|\\s*(bash|sh|zsh|powershell|pwsh)"
+
+  - rule_id: CMD-INSECURE-TLS
+    candidate_type: command
+    cwe: ["CWE-295"]
+    severity: medium
+    confidence: 0.8
+    description: Disables certificate verification.
+    regex: "(?i)(--insecure|\\s-k\\s|GIT_SSL_NO_VERIFY=1|NODE_TLS_REJECT_UNAUTHORIZED\\s*=\\s*0)"
+
+  - rule_id: CODE-HARDCODED-SECRET
+    candidate_type: code_snippet
+    cwe: ["CWE-798"]
+    severity: high
+    confidence: 0.8
+    description: Hardcoded secrets/tokens/password.
+    regex: "(?i)(api[_-]?key|secret|token|password)\\s*[:=]\\s*['\"][^'\"\\n]{8,}['\"]"
+
+  - rule_id: CODE-SQL-CONCAT
+    candidate_type: code_snippet
+    cwe: ["CWE-89"]
+    severity: high
+    confidence: 0.75
+    description: SQL query built with string concatenation/interpolation.
+    regex: "(?is)(select|insert|update|delete).{0,120}(\\+|%s|format\\(|f\"|\\$\\{)"
+
+  - rule_id: CODE-XSS-DANGEROUS-HTML
+    candidate_type: code_snippet
+    cwe: ["CWE-79"]
+    severity: high
+    confidence: 0.8
+    description: Potential unsafe HTML rendering.
+    regex: "(?i)(innerHTML\\s*=|dangerouslySetInnerHTML|v-html\\s*=|document\\.write\\()"
+
+  - rule_id: CODE-PATH-TRAVERSAL
+    candidate_type: code_snippet
+    cwe: ["CWE-22"]
+    severity: medium
+    confidence: 0.7
+    description: Direct path join/open using user input.
+    regex: "(?i)(open\\(|readFile\\(|send_file\\(|File\\().{0,120}(req\\.|request\\.|input\\(|argv|params|query)"
+
+  - rule_id: CODE-WEAK-HASH
+    candidate_type: code_snippet
+    cwe: ["CWE-327"]
+    severity: medium
+    confidence: 0.8
+    description: Use of weak cryptographic hash.
+    regex: "(?i)(md5\\(|sha1\\()"
+
+  - rule_id: ADVICE-DISABLE-AUTH
+    candidate_type: security_advice
+    cwe: ["CWE-306", "CWE-862"]
+    severity: high
+    confidence: 0.7
+    description: Advice to bypass authentication/authorization.
+    regex: "(?i)(disable|skip|remove).{0,40}(auth|authentication|authorization|permission|acl|rbac)"
+
+  - rule_id: ADVICE-TRUST-ALL-CERTS
+    candidate_type: security_advice
+    cwe: ["CWE-295"]
+    severity: high
+    confidence: 0.8
+    description: Advice to trust all TLS certificates.
+    regex: "(?i)(trust all cert|ignore ssl|disable certificate validation|verify\\s*=\\s*false)"

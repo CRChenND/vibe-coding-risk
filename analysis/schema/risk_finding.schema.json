@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "risk_finding.schema.json",
+  "title": "RiskFinding",
+  "type": "object",
+  "required": [
+    "finding_id",
+    "candidate_id",
+    "analyzer",
+    "is_risky",
+    "severity",
+    "confidence",
+    "cwe",
+    "evidence",
+    "verdict"
+  ],
+  "properties": {
+    "finding_id": {"type": "string"},
+    "candidate_id": {"type": "string"},
+    "analyzer": {
+      "type": "string",
+      "enum": ["llm_judge", "static_rule", "dynamic_test", "fusion"]
+    },
+    "is_risky": {"type": "boolean"},
+    "severity": {
+      "type": "string",
+      "enum": ["none", "low", "medium", "high", "critical"]
+    },
+    "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+    "cwe": {
+      "type": "array",
+      "items": {"type": "string", "pattern": "^CWE-[0-9]+$"}
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["quote", "reason"],
+        "properties": {
+          "quote": {"type": "string"},
+          "reason": {"type": "string"}
+        },
+        "additionalProperties": false
+      }
+    },
+    "verdict": {
+      "type": "string",
+      "enum": ["possible", "likely", "confirmed", "not_risky"]
+    },
+    "rule_id": {"type": ["string", "null"]},
+    "details": {"type": "object"}
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "candidate_record.schema.json",
+  "title": "CandidateRecord",
+  "type": "object",
+  "required": [
+    "candidate_id",
+    "chat_id",
+    "chat_path",
+    "platform",
+    "timestamp",
+    "message_index",
+    "block_index",
+    "candidate_type",
+    "content",
+    "content_hash",
+    "attribution",
+    "repo_context"
+  ],
+  "properties": {
+    "candidate_id": {"type": "string"},
+    "chat_id": {"type": "string"},
+    "chat_path": {"type": "string"},
+    "platform": {"type": ["string", "null"]},
+    "timestamp": {"type": ["string", "null"]},
+    "message_index": {"type": "integer", "minimum": 0},
+    "block_index": {"type": "integer", "minimum": 0},
+    "candidate_type": {
+      "type": "string",
+      "enum": ["code_snippet", "command", "security_advice"]
+    },
+    "language_hint": {"type": ["string", "null"]},
+    "content": {"type": "string", "minLength": 1},
+    "content_hash": {"type": "string"},
+    "attribution": {
+      "type": "string",
+      "enum": ["generated", "copied_from_repo", "execution_log", "unclear"]
+    },
+    "repo_context": {
+      "type": "object",
+      "required": ["repo_full_name", "repo_url", "search_match_path"],
+      "properties": {
+        "repo_full_name": {"type": ["string", "null"]},
+        "repo_url": {"type": ["string", "null"]},
+        "search_match_path": {"type": ["string", "null"]}
+      },
+      "additionalProperties": false
+    },
+    "metadata": {
+      "type": "object",
+      "properties": {
+        "block_type": {"type": ["string", "null"]},
+        "preceding_user_text": {"type": ["string", "null"]},
+        "assistant_text_len": {"type": ["integer", "null"], "minimum": 0}
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false
+}
