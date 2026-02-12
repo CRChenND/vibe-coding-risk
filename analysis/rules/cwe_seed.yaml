@@ -1,83 +1,383 @@
-# Seed rule set for fast baseline static screening.
-# You can extend this file with language-specific patterns later.
+# Extended seed rule set for broad baseline coverage.
+# This is intentionally recall-oriented; expect false positives.
 
 rules:
-  - rule_id: CMD-CURL-PIPE-BASH
+  # -------------------- Command patterns --------------------
+  - rule_id: CMD-CURL-PIPE-SHELL
     candidate_type: command
     cwe: ["CWE-78"]
     severity: high
-    confidence: 0.9
-    description: Piping remote script to shell.
-    regex: "(?i)curl\\s+[^|\\n]+\\|\\s*(bash|sh|zsh|powershell|pwsh)"
+    confidence: 0.95
+    description: Piping remote script directly into shell.
+    regex: '(?i)curl\s+[^|\n]+\|\s*(bash|sh|zsh|ksh|fish|powershell|pwsh)'
 
-  - rule_id: CMD-WGET-PIPE-BASH
+  - rule_id: CMD-WGET-PIPE-SHELL
     candidate_type: command
     cwe: ["CWE-78"]
     severity: high
-    confidence: 0.9
-    description: Piping wget output to shell.
-    regex: "(?i)wget\\s+[^|\\n]+\\|\\s*(bash|sh|zsh|powershell|pwsh)"
+    confidence: 0.95
+    description: Piping wget output directly into shell.
+    regex: '(?i)wget\s+[^|\n]+\|\s*(bash|sh|zsh|ksh|fish|powershell|pwsh)'
 
-  - rule_id: CMD-INSECURE-TLS
+  - rule_id: CMD-POWERSHELL-IEX-DOWNLOAD
+    candidate_type: command
+    cwe: ["CWE-78"]
+    severity: high
+    confidence: 0.95
+    description: PowerShell invoke-expression from remote source.
+    regex: '(?i)(iwr|invoke-webrequest|wget|curl).{0,120}\|.{0,20}(iex|invoke-expression)'
+
+  - rule_id: CMD-TLS-VERIFY-DISABLED
     candidate_type: command
     cwe: ["CWE-295"]
     severity: medium
-    confidence: 0.8
-    description: Disables certificate verification.
-    regex: "(?i)(--insecure|\\s-k\\s|GIT_SSL_NO_VERIFY=1|NODE_TLS_REJECT_UNAUTHORIZED\\s*=\\s*0)"
+    confidence: 0.9
+    description: TLS/certificate verification disabled.
+    regex: '(?i)(--insecure|\s-k(\s|$)|GIT_SSL_NO_VERIFY=1|NODE_TLS_REJECT_UNAUTHORIZED\s*=\s*0|--no-check-certificate|sslverify\s*=\s*false)'
 
-  - rule_id: CODE-HARDCODED-SECRET
-    candidate_type: code_snippet
-    cwe: ["CWE-798"]
+  - rule_id: CMD-DOCKER-PRIVILEGED
+    candidate_type: command
+    cwe: ["CWE-250"]
+    severity: high
+    confidence: 0.9
+    description: Docker container started with elevated host privileges.
+    regex: '(?i)docker\s+run\b[^\n]*\s--privileged\b'
+
+  - rule_id: CMD-KUBECTL-PRIVILEGED
+    candidate_type: command
+    cwe: ["CWE-250"]
     severity: high
     confidence: 0.8
-    description: Hardcoded secrets/tokens/password.
-    regex: "(?i)(api[_-]?key|secret|token|password)\\s*[:=]\\s*['\"][^'\"\\n]{8,}['\"]"
+    description: Kubernetes workload configured as privileged.
+    regex: '(?i)kubectl\s+run\b[^\n]*\b(privileged|allow-privileged)\b'
 
+  - rule_id: CMD-SSH-PASSWORD-INLINE
+    candidate_type: command
+    cwe: ["CWE-798"]
+    severity: high
+    confidence: 0.9
+    description: Password passed directly in command line.
+    regex: '(?i)(sshpass\s+-p\s+\S+|mysql\s+-u\s+\S+\s+-p\S+|psql\s+[^\n]*postgres://[^\n]*:[^\n]*@)'
+
+  - rule_id: CMD-SUDO-PIPE-PASSWORD
+    candidate_type: command
+    cwe: ["CWE-798"]
+    severity: high
+    confidence: 0.85
+    description: Password piped into sudo.
+    regex: '(?i)echo\s+.+\|\s*sudo\s+-S\b'
+
+  - rule_id: CMD-CHMOD-777
+    candidate_type: command
+    cwe: ["CWE-732"]
+    severity: medium
+    confidence: 0.85
+    description: World-writable permission assignment.
+    regex: '(?i)chmod\s+(-R\s+)?777\b'
+
+  - rule_id: CMD-CHOWN-ROOT-RECURSIVE
+    candidate_type: command
+    cwe: ["CWE-250"]
+    severity: medium
+    confidence: 0.75
+    description: Recursive ownership change to root.
+    regex: '(?i)chown\s+-R\s+root(:root)?\b'
+
+  # -------------------- Code patterns: command execution --------------------
+  - rule_id: CODE-PY-SUBPROCESS-SHELL-TRUE
+    candidate_type: code_snippet
+    cwe: ["CWE-78"]
+    severity: high
+    confidence: 0.9
+    description: Python subprocess with shell=True.
+    regex: '(?is)subprocess\.(run|Popen|call|check_output)\s*\([^\)]*shell\s*=\s*True'
+
+  - rule_id: CODE-PY-OS-SYSTEM-USER-INPUT
+    candidate_type: code_snippet
+    cwe: ["CWE-78"]
+    severity: high
+    confidence: 0.8
+    description: os.system with user-controlled input indicators.
+    regex: '(?is)os\.system\s*\([^\)]*(input\(|request\.|req\.|argv|params|query|user)'
+
+  - rule_id: CODE-JS-CHILD-PROCESS-EXEC
+    candidate_type: code_snippet
+    cwe: ["CWE-78"]
+    severity: high
+    confidence: 0.9
+    description: Node child_process exec patterns.
+    regex: '(?is)(child_process\.)?(exec|execSync)\s*\('
+
+  - rule_id: CODE-JAVA-RUNTIME-EXEC
+    candidate_type: code_snippet
+    cwe: ["CWE-78"]
+    severity: high
+    confidence: 0.85
+    description: Java Runtime/ProcessBuilder command execution.
+    regex: '(?is)(Runtime\.getRuntime\(\)\.exec\s*\(|new\s+ProcessBuilder\s*\()'
+
+  # -------------------- Code patterns: injection --------------------
   - rule_id: CODE-SQL-CONCAT
     candidate_type: code_snippet
     cwe: ["CWE-89"]
     severity: high
-    confidence: 0.75
-    description: SQL query built with string concatenation/interpolation.
-    regex: "(?is)(select|insert|update|delete).{0,120}(\\+|%s|format\\(|f\"|\\$\\{)"
+    confidence: 0.85
+    description: SQL built via concatenation/interpolation.
+    regex: '(?is)(select|insert|update|delete).{0,200}(\+|%s|format\(|f\"|\$\{)'
 
-  - rule_id: CODE-XSS-DANGEROUS-HTML
+  - rule_id: CODE-NOSQL-WHERE-EVAL
+    candidate_type: code_snippet
+    cwe: ["CWE-943"]
+    severity: high
+    confidence: 0.8
+    description: NoSQL script/eval-like query usage.
+    regex: '(?is)(\$where|mapReduce\s*\(|db\.eval\s*\()'
+
+  - rule_id: CODE-LDAP-FILTER-CONCAT
+    candidate_type: code_snippet
+    cwe: ["CWE-90"]
+    severity: medium
+    confidence: 0.8
+    description: LDAP filter string concatenation.
+    regex: '(?is)\(\s*(cn|uid|mail)\s*=\s*[''\"]?\s*\+'
+
+  - rule_id: CODE-XPATH-CONCAT
+    candidate_type: code_snippet
+    cwe: ["CWE-643"]
+    severity: medium
+    confidence: 0.75
+    description: XPath query concatenation.
+    regex: '(?is)(xpath|evaluate)\s*\([^\)]*(\+|format\(|\$\{)'
+
+  # -------------------- Code patterns: XSS --------------------
+  - rule_id: CODE-XSS-DANGEROUS-SINK
     candidate_type: code_snippet
     cwe: ["CWE-79"]
     severity: high
-    confidence: 0.8
-    description: Potential unsafe HTML rendering.
-    regex: "(?i)(innerHTML\\s*=|dangerouslySetInnerHTML|v-html\\s*=|document\\.write\\()"
+    confidence: 0.9
+    description: Common dangerous HTML sinks.
+    regex: '(?i)(innerHTML\s*=|outerHTML\s*=|dangerouslySetInnerHTML|v-html\s*=|document\.write\()'
 
-  - rule_id: CODE-PATH-TRAVERSAL
+  - rule_id: CODE-XSS-UNSAFE-TEMPLATE
+    candidate_type: code_snippet
+    cwe: ["CWE-79"]
+    severity: medium
+    confidence: 0.8
+    description: Templating marked safe without sanitization.
+    regex: '(?is)(\|\s*safe\b|Markup\(|bypassSecurityTrustHtml\()'
+
+  # -------------------- Code patterns: path traversal / file handling --------------------
+  - rule_id: CODE-PATH-TRAVERSAL-USER-PATH
     candidate_type: code_snippet
     cwe: ["CWE-22"]
-    severity: medium
-    confidence: 0.7
-    description: Direct path join/open using user input.
-    regex: "(?i)(open\\(|readFile\\(|send_file\\(|File\\().{0,120}(req\\.|request\\.|input\\(|argv|params|query)"
+    severity: high
+    confidence: 0.85
+    description: File path operations with user-controlled path indicators.
+    regex: '(?is)(open\(|readFile\(|send_file\(|File\(|fs\.readFile\(|fs\.writeFile\().{0,180}(req\.|request\.|input\(|argv|params|query|user)'
 
+  - rule_id: CODE-ZIP-SLIP
+    candidate_type: code_snippet
+    cwe: ["CWE-22"]
+    severity: high
+    confidence: 0.8
+    description: Archive extraction without traversal checks.
+    regex: '(?is)(extractall\s*\(|ZipEntry\s*\(|tar\.extract\()'
+
+  # -------------------- Code patterns: auth/session --------------------
+  - rule_id: CODE-JWT-VERIFY-FALSE
+    candidate_type: code_snippet
+    cwe: ["CWE-345"]
+    severity: high
+    confidence: 0.9
+    description: JWT verification disabled or skipped.
+    regex: '(?is)(jwt\.(decode|verify)\s*\([^\)]*verify\s*=\s*False|algorithms?\s*=\s*\[?[''\"]none[''\"]\]?|verify_signature\s*=\s*False)'
+
+  - rule_id: CODE-AUTH-BYPASS-FLAG
+    candidate_type: code_snippet
+    cwe: ["CWE-306", "CWE-862"]
+    severity: high
+    confidence: 0.75
+    description: Explicit auth bypass toggle/branch.
+    regex: '(?is)(bypassAuth|skipAuth|disableAuth|authDisabled|if\s*\(\s*true\s*\)\s*return\s+true)'
+
+  - rule_id: CODE-SESSION-IN-URL
+    candidate_type: code_snippet
+    cwe: ["CWE-598"]
+    severity: medium
+    confidence: 0.8
+    description: Session/token in URL query parameters.
+    regex: '(?is)([?&](token|session|auth)=|req\.query\.(token|session|auth))'
+
+  # -------------------- Code patterns: cryptography / randomness --------------------
   - rule_id: CODE-WEAK-HASH
     candidate_type: code_snippet
     cwe: ["CWE-327"]
     severity: medium
-    confidence: 0.8
-    description: Use of weak cryptographic hash.
-    regex: "(?i)(md5\\(|sha1\\()"
+    confidence: 0.85
+    description: Weak cryptographic hash function usage.
+    regex: '(?i)(\bmd5\s*\(|\bsha1\s*\()'
 
+  - rule_id: CODE-WEAK-CIPHER
+    candidate_type: code_snippet
+    cwe: ["CWE-327"]
+    severity: high
+    confidence: 0.85
+    description: Deprecated/weak cipher usage.
+    regex: '(?i)(\bDES\b|\b3DES\b|\bRC4\b|\bECB\b|AES/ECB|DESede)'
+
+  - rule_id: CODE-INSECURE-RANDOM
+    candidate_type: code_snippet
+    cwe: ["CWE-338"]
+    severity: medium
+    confidence: 0.8
+    description: Non-cryptographic randomness used in security contexts.
+    regex: '(?is)(Math\.random\s*\(|random\.random\s*\(|new\s+Random\s*\()'
+
+  # -------------------- Code patterns: TLS / transport --------------------
+  - rule_id: CODE-TLS-VERIFY-FALSE
+    candidate_type: code_snippet
+    cwe: ["CWE-295"]
+    severity: high
+    confidence: 0.9
+    description: Certificate verification disabled in code.
+    regex: '(?is)(verify\s*=\s*False|rejectUnauthorized\s*:\s*false|InsecureSkipVerify\s*:\s*true|TrustAll|HostnameVerifier\s*\{)'
+
+  - rule_id: CODE-HTTP-NO-TLS
+    candidate_type: code_snippet
+    cwe: ["CWE-319"]
+    severity: medium
+    confidence: 0.7
+    description: Potential sensitive data over plain HTTP.
+    regex: '(?is)https?://'
+
+  # -------------------- Code patterns: insecure deserialization --------------------
+  - rule_id: CODE-PY-PICKLE-LOADS
+    candidate_type: code_snippet
+    cwe: ["CWE-502"]
+    severity: high
+    confidence: 0.95
+    description: Python pickle deserialization.
+    regex: '(?is)pickle\.(loads|load)\s*\('
+
+  - rule_id: CODE-PY-YAML-UNSAFE-LOAD
+    candidate_type: code_snippet
+    cwe: ["CWE-502"]
+    severity: high
+    confidence: 0.9
+    description: yaml.load without SafeLoader.
+    regex: '(?is)yaml\.load\s*\([^\)]*(?!SafeLoader)'
+
+  - rule_id: CODE-JAVA-OBJECTINPUTSTREAM
+    candidate_type: code_snippet
+    cwe: ["CWE-502"]
+    severity: high
+    confidence: 0.9
+    description: Java native object deserialization.
+    regex: '(?is)(ObjectInputStream\s*\(|readObject\s*\()'
+
+  # -------------------- Code patterns: SSRF / redirects --------------------
+  - rule_id: CODE-SSRF-URL-FETCH
+    candidate_type: code_snippet
+    cwe: ["CWE-918"]
+    severity: medium
+    confidence: 0.75
+    description: URL fetch from potentially user-controlled source.
+    regex: '(?is)(requests\.(get|post)\s*\(|axios\.(get|post)\s*\(|fetch\s*\().{0,160}(req\.|request\.|input\(|query|params|user|url)'
+
+  - rule_id: CODE-OPEN-REDIRECT
+    candidate_type: code_snippet
+    cwe: ["CWE-601"]
+    severity: medium
+    confidence: 0.8
+    description: Redirect based on user-controlled input.
+    regex: '(?is)(redirect\s*\(|Response\.Redirect\s*\().{0,120}(req\.|request\.|query|params|next|returnUrl|url)'
+
+  # -------------------- Code patterns: secrets / credentials --------------------
+  - rule_id: CODE-HARDCODED-SECRET
+    candidate_type: code_snippet
+    cwe: ["CWE-798"]
+    severity: high
+    confidence: 0.9
+    description: Hardcoded API key/token/password/secret.
+    regex: '(?is)(api[_-]?key|secret|token|password|passwd|private[_-]?key)\s*[:=]\s*[''\"][^''\"\n]{8,}[''\"]'
+
+  - rule_id: CODE-PRIVATE-KEY-MATERIAL
+    candidate_type: code_snippet
+    cwe: ["CWE-798"]
+    severity: critical
+    confidence: 0.95
+    description: Embedded private key material.
+    regex: '(?is)-----BEGIN\s+(RSA\s+)?PRIVATE\s+KEY-----'
+
+  - rule_id: CODE-AWS-ACCESS-KEY
+    candidate_type: code_snippet
+    cwe: ["CWE-798"]
+    severity: high
+    confidence: 0.9
+    description: AWS access key pattern.
+    regex: '(?i)AKIA[0-9A-Z]{16}'
+
+  # -------------------- Security advice patterns --------------------
   - rule_id: ADVICE-DISABLE-AUTH
     candidate_type: security_advice
     cwe: ["CWE-306", "CWE-862"]
     severity: high
-    confidence: 0.7
-    description: Advice to bypass authentication/authorization.
-    regex: "(?i)(disable|skip|remove).{0,40}(auth|authentication|authorization|permission|acl|rbac)"
+    confidence: 0.85
+    description: Advice to disable or bypass auth checks.
+    regex: '(?is)(disable|skip|remove|bypass).{0,60}(auth|authentication|authorization|permission|acl|rbac)'
 
   - rule_id: ADVICE-TRUST-ALL-CERTS
     candidate_type: security_advice
     cwe: ["CWE-295"]
     severity: high
+    confidence: 0.9
+    description: Advice to trust all certificates / disable TLS checks.
+    regex: '(?is)(trust all cert|ignore ssl|disable certificate validation|verify\s*=\s*false|rejectUnauthorized\s*[:=]\s*false|InsecureSkipVerify)'
+
+  - rule_id: ADVICE-HARDCODE-SECRETS
+    candidate_type: security_advice
+    cwe: ["CWE-798"]
+    severity: high
+    confidence: 0.85
+    description: Advice to hardcode secret/token/password.
+    regex: '(?is)(hardcode|put directly in code|inline).{0,80}(key|secret|token|password)'
+
+  - rule_id: ADVICE-DISABLE-CSRF
+    candidate_type: security_advice
+    cwe: ["CWE-352"]
+    severity: medium
     confidence: 0.8
-    description: Advice to trust all TLS certificates.
-    regex: "(?i)(trust all cert|ignore ssl|disable certificate validation|verify\\s*=\\s*false)"
+    description: Advice to disable CSRF protection.
+    regex: '(?is)(disable|turn off|skip).{0,40}(csrf|xsrf)'
+
+  - rule_id: ADVICE-CORS-WILDCARD-CREDS
+    candidate_type: security_advice
+    cwe: ["CWE-942"]
+    severity: medium
+    confidence: 0.75
+    description: Insecure CORS wildcard with credentials context.
+    regex: '(?is)(access-control-allow-origin\s*[:=]\s*\*|cors\s*\([^\)]*origin\s*[:=]\s*\*).{0,80}(credentials|cookies|auth)'
+
+  - rule_id: ADVICE-USE-EVAL
+    candidate_type: security_advice
+    cwe: ["CWE-95"]
+    severity: high
+    confidence: 0.8
+    description: Advice recommending eval-like execution.
+    regex: '(?is)(use|run|execute).{0,40}(eval\(|Function\(|exec\()'
+
+  - rule_id: ADVICE-DISABLE-INPUT-VALIDATION
+    candidate_type: security_advice
+    cwe: ["CWE-20"]
+    severity: medium
+    confidence: 0.75
+    description: Advice to skip input validation/sanitization.
+    regex: '(?is)(disable|skip|remove).{0,50}(input validation|sanitize|sanitization|validation)'
+
+  - rule_id: ADVICE-STORE-PLAINTEXT-PASSWORD
+    candidate_type: security_advice
+    cwe: ["CWE-256"]
+    severity: high
+    confidence: 0.9
+    description: Advice to store plaintext passwords.
+    regex: '(?is)(store|save|keep).{0,60}(password).{0,40}(plain text|plaintext|without hashing|no hash)'

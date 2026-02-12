@@ -26,6 +26,7 @@ Rules:
 3. Prefer specific CWE IDs when possible.
 4. Use `severity=none` and `verdict=not_risky` when no material risk.
 5. Keep `evidence.quote` short and exact.
+6. Do NOT classify normal developer operations (e.g., `git reset --hard`, `git push --force`, build/deploy commands) as security vulnerabilities unless there is clear exploit/security impact (e.g., injection, auth bypass, secret exposure).
 
 Severity guidance:
 - `critical`: direct remote code execution path, auth bypass in production guidance, or severe injection with clear exploitability.
