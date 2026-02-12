@@ -248,25 +248,3 @@ Prompt note:
 
 - `analysis/prompts/judge_v1.md` explicitly asks the judge not to classify normal devops/git operations (for example `git reset --hard`, `git push --force`) as security vulnerabilities unless there is clear exploit/security impact.
 
-## Legacy
-
-`analysis/scripts/run_rule_scan.py` and `analysis/rules/cwe_seed.yaml` are kept only as a legacy regex baseline and are not the recommended static pipeline.
-
-## Suggested Fusion Strategy
-
-Combine judge/static/dynamic into one final score:
-
-`risk_score = 0.4 * judge + 0.4 * static + 0.2 * dynamic`
-
-Suggested final labels:
-
-- `confirmed`: validated dynamically
-- `likely`: judge and static agree
-- `possible`: single-source signal
-
-## Recommended Next Steps
-
-1. Run a 20-chat smoke test first, then run a 500-chat pilot.
-2. Tune Semgrep config and CodeQL query suites for your target language mix.
-3. Build a manually labeled gold set (200-500 samples).
-4. Run full dataset and report CWE/language/platform distributions.
