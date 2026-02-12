@@ -16,7 +16,6 @@ __pycache__/
 .ruff_cache/
 
 # Analysis outputs
-analysis/output/*.json
-analysis/output/*.jsonl
+analysis/output/
 
 .DS_Store
