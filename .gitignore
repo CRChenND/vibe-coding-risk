@@ -18,4 +18,8 @@ __pycache__/
 # Analysis outputs
 analysis/output/
 
+# Paper assets (must be tracked)
+!paper_figures/
+!paper_figures/**
+
 .DS_Store

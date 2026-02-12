@@ -21,9 +21,13 @@ This project analyzes assistant-generated code/replies in chat logs and maps ris
 - `analysis/scripts/run_static_hybrid.py`: Runs static analysis (CodeQL first, Semgrep fallback)
 - `analysis/scripts/judge_openrouter.py`: Runs LLM-as-a-judge via OpenRouter
 - `analysis/scripts/backtrace_risky_user_context.py`: Backtraces risky findings to user+assistant context
+- `analysis/scripts/judge_attribution_openrouter.py`: Runs root-cause attribution judge on risky backtrace rows
+- `analysis/scripts/analyze_attribution_patterns.py`: Aggregates attribution + conversation tracing + CWE cross tables
+- `analysis/scripts/analyze_trajectory_metrics.py`: Computes trajectory causal attribution metrics from aggregated outputs
 - `analysis/schema/candidate_record.schema.json`: Schema for extracted candidates
 - `analysis/schema/risk_finding.schema.json`: Schema for findings
 - `analysis/prompts/judge_v1.md`: Prompt template for LLM judge
+- `analysis/prompts/attribution_judge_v1.md`: Prompt template for attribution judge
 - `analysis/tools/findsecbugs/findsecbugs-plugin.jar`: Recommended FindSecBugs plugin location
 
 ## Setup (uv)
@@ -304,3 +308,75 @@ Useful flags:
 
 - `--lookback-users 3` to include up to N previous user messages
 - `--all-findings` to include non-risky findings too (default is risky-only)
+
+### 5. Attribution + causal pattern analysis
+
+Step 5a: LLM attribution judge on risky backtrace rows.
+
+Smoke test (first 50 rows):
+
+```bash
+uv run python analysis/scripts/judge_attribution_openrouter.py \
+  --input analysis/output/risky_backtrace_all.jsonl \
+  --prompt analysis/prompts/attribution_judge_v1.md \
+  --out analysis/output/attribution_labels_sample.jsonl \
+  --limit 50 \
+  --model google/gemini-2.5-flash-lite \
+  --temperature 0.0
+```
+
+Full run:
+
+```bash
+uv run python analysis/scripts/judge_attribution_openrouter.py \
+  --input analysis/output/risky_backtrace_all.jsonl \
+  --prompt analysis/prompts/attribution_judge_v1.md \
+  --out analysis/output/attribution_labels_all.jsonl \
+  --model google/gemini-2.5-flash-lite \
+  --temperature 0.0
+```
+
+Resume behavior:
+
+- Default is `--resume` (enabled), so already processed `finding_id` rows in output are skipped.
+- To rerun from scratch, use `--no-resume`.
+- To resume and retry rows that previously ended as `judge_error` fallback, add `--retry-errors`.
+
+Step 5b: Aggregate conversation-level tracing and `CWE x attribution`.
+
+```bash
+uv run python analysis/scripts/analyze_attribution_patterns.py \
+  --backtrace analysis/output/risky_backtrace_all.jsonl \
+  --attribution analysis/output/attribution_labels_all.jsonl \
+  --out-dir analysis/output/attribution_analysis_all
+```
+
+Outputs under `analysis/output/attribution_analysis_all`:
+
+- `attribution_enriched.csv`: row-level merged risk + attribution + trace fields
+- `conversation_tracing.csv`: `first_mention_turn`, `first_concretization_turn`, `first_persistence_turn`
+- `cwe_attribution.csv`: per-CWE cause counts and ratios
+- `summary.json`: headline metrics and attribution distribution
+
+Step 5c (optional): trajectory causal attribution metrics.
+
+```bash
+uv run python analysis/scripts/analyze_trajectory_metrics.py \
+  --enriched analysis/output/attribution_analysis_all/attribution_enriched.csv \
+  --tracing analysis/output/attribution_analysis_all/conversation_tracing.csv \
+  --out-dir analysis/output/trajectory_analysis_all
+```
+
+Outputs under `analysis/output/trajectory_analysis_all`:
+
+- `risk_emergence_turn_distribution.csv`: `P(risk first appears at turn t)`
+- `risk_emergence_bucket_distribution.csv`: early/late emergence buckets
+- `risk_escalation_samples.csv`: per-sample turn gaps (`mention/concretization/persistence`)
+- `assistant_regression_by_cwe.csv`: assistant security regression proxy by CWE
+- `severity_by_mention_gap_bucket.csv`: severity distribution vs trajectory depth
+- `summary.json`: trajectory headline metrics
+
+Path consistency tip:
+
+- For full runs, keep the suffix aligned across steps (for example `_all`): `attribution_labels_all.jsonl` -> `attribution_analysis_all/` -> `trajectory_analysis_all/`.
+- You can use any custom directory names via `--out-dir`, but Step 5c inputs must match the Step 5b output directory you actually used.

@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="980" height="560" viewBox="0 0 980 560">
+<rect width="100%" height="100%" fill="white"/>
+<text x="490.0" y="40" text-anchor="middle" font-family="Arial" font-size="26" font-weight="700">Top CWE Frequency (Top 10)</text>
+<line x1="110" y1="450" x2="940" y2="450" stroke="#222" stroke-width="2"/>
+<line x1="110" y1="80" x2="110" y2="450" stroke="#222" stroke-width="2"/>
+<line x1="104" y1="450.0" x2="110" y2="450.0" stroke="#222" stroke-width="1"/>
+<text x="100" y="455.0" text-anchor="end" font-family="Arial" font-size="12" fill="#444">0</text>
+<line x1="110" y1="450.0" x2="940" y2="450.0" stroke="#eee" stroke-width="1"/>
+<line x1="104" y1="376.0" x2="110" y2="376.0" stroke="#222" stroke-width="1"/>
+<text x="100" y="381.0" text-anchor="end" font-family="Arial" font-size="12" fill="#444">16</text>
+<line x1="110" y1="376.0" x2="940" y2="376.0" stroke="#eee" stroke-width="1"/>
+<line x1="104" y1="302.0" x2="110" y2="302.0" stroke="#222" stroke-width="1"/>
+<text x="100" y="307.0" text-anchor="end" font-family="Arial" font-size="12" fill="#444">33</text>
+<line x1="110" y1="302.0" x2="940" y2="302.0" stroke="#eee" stroke-width="1"/>
+<line x1="104" y1="228.0" x2="110" y2="228.0" stroke="#222" stroke-width="1"/>
+<text x="100" y="233.0" text-anchor="end" font-family="Arial" font-size="12" fill="#444">49</text>
+<line x1="110" y1="228.0" x2="940" y2="228.0" stroke="#eee" stroke-width="1"/>
+<line x1="104" y1="154.0" x2="110" y2="154.0" stroke="#222" stroke-width="1"/>
+<text x="100" y="159.0" text-anchor="end" font-family="Arial" font-size="12" fill="#444">66</text>
+<line x1="110" y1="154.0" x2="940" y2="154.0" stroke="#eee" stroke-width="1"/>
+<line x1="104" y1="80.0" x2="110" y2="80.0" stroke="#222" stroke-width="1"/>
+<text x="100" y="85.0" text-anchor="end" font-family="Arial" font-size="12" fill="#444">82</text>
+<line x1="110" y1="80.0" x2="940" y2="80.0" stroke="#eee" stroke-width="1"/>
+<text x="28" y="265.0" transform="rotate(-90 28,265.0)" font-family="Arial" font-size="14" fill="#444">Count</text>
+<rect x="135.5" y="80.0" width="55" height="370.0" fill="#2ca02c" rx="4"/>
+<text x="163.0" y="72.0" text-anchor="middle" font-family="Arial" font-size="11" fill="#111">82</text>
+<text x="163.0" y="470" text-anchor="middle" font-family="Arial" font-size="11" fill="#333" transform="rotate(25 163.0,470)">CWE-312</text>
+<rect x="215.9" y="247.0" width="55" height="203.0" fill="#2ca02c" rx="4"/>
+<text x="243.4" y="239.0" text-anchor="middle" font-family="Arial" font-size="11" fill="#111">45</text>
+<text x="243.4" y="470" text-anchor="middle" font-family="Arial" font-size="11" fill="#333" transform="rotate(25 243.4,470)">CWE-79</text>
+<rect x="296.4" y="301.1" width="55" height="148.9" fill="#2ca02c" rx="4"/>
+<text x="323.9" y="293.1" text-anchor="middle" font-family="Arial" font-size="11" fill="#111">33</text>
+<text x="323.9" y="470" text-anchor="middle" font-family="Arial" font-size="11" fill="#333" transform="rotate(25 323.9,470)">CWE-UNKNOWN</text>
+<rect x="376.8" y="350.7" width="55" height="99.3" fill="#2ca02c" rx="4"/>
+<text x="404.3" y="342.7" text-anchor="middle" font-family="Arial" font-size="11" fill="#111">22</text>
+<text x="404.3" y="470" text-anchor="middle" font-family="Arial" font-size="11" fill="#333" transform="rotate(25 404.3,470)">CWE-459</text>
+<rect x="457.3" y="368.8" width="55" height="81.2" fill="#2ca02c" rx="4"/>
+<text x="484.8" y="360.8" text-anchor="middle" font-family="Arial" font-size="11" fill="#111">18</text>
+<text x="484.8" y="470" text-anchor="middle" font-family="Arial" font-size="11" fill="#333" transform="rotate(25 484.8,470)">CWE-327</text>
+<rect x="537.7" y="391.3" width="55" height="58.7" fill="#2ca02c" rx="4"/>
+<text x="565.2" y="383.3" text-anchor="middle" font-family="Arial" font-size="11" fill="#111">13</text>
+<text x="565.2" y="470" text-anchor="middle" font-family="Arial" font-size="11" fill="#333" transform="rotate(25 565.2,470)">CWE-200</text>
+<rect x="618.2" y="395.9" width="55" height="54.1" fill="#2ca02c" rx="4"/>
+<text x="645.7" y="387.9" text-anchor="middle" font-family="Arial" font-size="11" fill="#111">12</text>
+<text x="645.7" y="470" text-anchor="middle" font-family="Arial" font-size="11" fill="#333" transform="rotate(25 645.7,470)">CWE-20</text>
+<rect x="698.6" y="413.9" width="55" height="36.1" fill="#2ca02c" rx="4"/>
+<text x="726.1" y="405.9" text-anchor="middle" font-family="Arial" font-size="11" fill="#111">8</text>
+<text x="726.1" y="470" text-anchor="middle" font-family="Arial" font-size="11" fill="#333" transform="rotate(25 726.1,470)">CWE-522</text>
+<rect x="779.1" y="418.4" width="55" height="31.6" fill="#2ca02c" rx="4"/>
+<text x="806.6" y="410.4" text-anchor="middle" font-family="Arial" font-size="11" fill="#111">7</text>
+<text x="806.6" y="470" text-anchor="middle" font-family="Arial" font-size="11" fill="#333" transform="rotate(25 806.6,470)">CWE-306</text>
+<rect x="859.5" y="418.4" width="55" height="31.6" fill="#2ca02c" rx="4"/>
+<text x="887.0" y="410.4" text-anchor="middle" font-family="Arial" font-size="11" fill="#111">7</text>
+<text x="887.0" y="470" text-anchor="middle" font-family="Arial" font-size="11" fill="#333" transform="rotate(25 887.0,470)">CWE-321</text>
+</svg>
