@@ -193,6 +193,12 @@ uv run python analysis/scripts/run_static_hybrid.py \
   --semgrep-config auto
 ```
 
+Resume behavior:
+
+- Default is `--resume` (enabled).
+- Repo progress is checkpointed to a sidecar file: `<out>.repos_done.jsonl`.
+- To force a fresh run, use `--no-resume`.
+
 Behavior:
 
 - Runs static analysis once per repo (not once per chat).
@@ -231,7 +237,7 @@ Default model:
 
 - `google/gemini-2.5-flash-lite`
 
-Run:
+Pilot run (500):
 
 ```bash
 uv run python analysis/scripts/judge_openrouter.py \
@@ -242,9 +248,24 @@ uv run python analysis/scripts/judge_openrouter.py \
   --temperature 0.0
 ```
 
+Full run:
+
+```bash
+uv run python analysis/scripts/judge_openrouter.py \
+  --candidates analysis/output/candidates_all.jsonl \
+  --prompt analysis/prompts/judge_v1.md \
+  --out analysis/output/judge_findings_all.jsonl \
+  --model google/gemini-2.5-flash-lite \
+  --temperature 0.0
+```
+
+Resume behavior:
+
+- Default is `--resume` (enabled), so already judged `candidate_id` rows in output are skipped.
+- To rerun from scratch, use `--no-resume`.
+
 Output format follows `analysis/schema/risk_finding.schema.json`.
 
 Prompt note:
 
 - `analysis/prompts/judge_v1.md` explicitly asks the judge not to classify normal devops/git operations (for example `git reset --hard`, `git push --force`) as security vulnerabilities unless there is clear exploit/security impact.
-

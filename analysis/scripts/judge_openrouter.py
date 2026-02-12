@@ -26,6 +26,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--max-tokens", type=int, default=900)
     p.add_argument("--retries", type=int, default=3)
     p.add_argument("--sleep", type=float, default=0.0, help="sleep seconds between requests")
+    p.add_argument("--resume", dest="resume", action="store_true", default=True, help="Resume from existing output.")
+    p.add_argument("--no-resume", dest="resume", action="store_false", help="Do not resume; overwrite output.")
     return p.parse_args()
 
 
@@ -63,6 +65,25 @@ def parse_judge_json(text: str) -> dict[str, Any]:
         if start >= 0 and end > start:
             return json.loads(raw[start : end + 1])
         raise
+
+
+def load_done_candidate_ids(out_file: Path) -> set[str]:
+    done: set[str] = set()
+    if not out_file.exists():
+        return done
+    with out_file.open("rb") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                obj = orjson.loads(line)
+            except Exception:  # noqa: BLE001
+                continue
+            cid = obj.get("candidate_id")
+            if isinstance(cid, str) and cid:
+                done.add(cid)
+    return done
 
 
 def build_fallback(candidate_id: str, err: str) -> dict[str, Any]:
@@ -212,17 +233,24 @@ def main() -> None:
         raw_lines = raw_lines[: args.limit]
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
+    done_ids = load_done_candidate_ids(args.out) if args.resume else set()
 
     count_ok = 0
     count_err = 0
+    count_skip = 0
+
+    mode = "ab" if args.resume else "wb"
 
     with httpx.Client(base_url=base_url, timeout=120.0) as client:
-        with args.out.open("wb") as wf:
+        with args.out.open(mode) as wf:
             for line in tqdm(raw_lines, desc="llm-judge"):
                 if not line.strip():
                     continue
                 candidate = orjson.loads(line)
                 candidate_id = str(candidate.get("candidate_id", "unknown"))
+                if candidate_id in done_ids:
+                    count_skip += 1
+                    continue
                 candidate_json = orjson.dumps(candidate, option=orjson.OPT_INDENT_2).decode("utf-8")
                 prompt_text = template.replace("{{candidate_record_json}}", candidate_json)
 
@@ -241,6 +269,7 @@ def main() -> None:
                         finding = normalize_finding(candidate_id, parsed, args.model)
                         wf.write(orjson.dumps(finding) + b"\n")
                         count_ok += 1
+                        done_ids.add(candidate_id)
                         last_err = None
                         break
                     except Exception as exc:  # noqa: BLE001
@@ -253,11 +282,13 @@ def main() -> None:
                     fallback = build_fallback(candidate_id, str(last_err))
                     fallback["details"]["model"] = args.model
                     wf.write(orjson.dumps(fallback) + b"\n")
+                    done_ids.add(candidate_id)
 
                 if args.sleep > 0:
                     time.sleep(args.sleep)
 
-    print(f"Candidates processed: {len(raw_lines)}")
+    print(f"Candidates seen: {len(raw_lines)}")
+    print(f"Candidates skipped(resume): {count_skip}")
     print(f"Judge success: {count_ok}")
     print(f"Judge fallback(errors): {count_err}")
     print(f"Output: {args.out}")

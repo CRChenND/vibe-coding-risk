@@ -39,6 +39,14 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--gitleaks-report-root", type=Path, default=Path("analysis/output/gitleaks_reports"))
     p.add_argument("--limit", type=int, default=0, help="Limit input candidate lines.")
     p.add_argument("--timeout-sec", type=int, default=300)
+    p.add_argument("--resume", dest="resume", action="store_true", default=True, help="Resume from previous output.")
+    p.add_argument("--no-resume", dest="resume", action="store_false", help="Do not resume; overwrite output.")
+    p.add_argument(
+        "--resume-state",
+        type=Path,
+        default=None,
+        help="Optional repo checkpoint file. Default: <out>.repos_done.jsonl",
+    )
     return p.parse_args()
 
 
@@ -112,6 +120,49 @@ def load_candidates(path: Path, limit: int) -> list[dict[str, Any]]:
                 continue
             rows.append(orjson.loads(line))
     return rows
+
+
+def default_resume_state_path(out_file: Path) -> Path:
+    return Path(f"{out_file}.repos_done.jsonl")
+
+
+def load_done_repos_from_state(path: Path) -> set[str]:
+    done: set[str] = set()
+    if not path.exists():
+        return done
+    with path.open("rb") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                obj = orjson.loads(line)
+            except Exception:  # noqa: BLE001
+                continue
+            repo = obj.get("repo_full_name")
+            if isinstance(repo, str) and repo:
+                done.add(repo)
+    return done
+
+
+def load_done_repos_from_output(path: Path) -> set[str]:
+    done: set[str] = set()
+    if not path.exists():
+        return done
+    with path.open("rb") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                obj = orjson.loads(line)
+            except Exception:  # noqa: BLE001
+                continue
+            details = obj.get("details") or {}
+            repo = details.get("repo_full_name")
+            if isinstance(repo, str) and repo:
+                done.add(repo)
+    return done
 
 
 def repo_path_from_full_name(repos_root: Path, full_name: str) -> Path | None:
@@ -976,6 +1027,7 @@ def main() -> None:
     args = parse_args()
     candidates = load_candidates(args.candidates, args.limit)
     args.out.parent.mkdir(parents=True, exist_ok=True)
+    resume_state = args.resume_state or default_resume_state_path(args.out)
 
     has_codeql = has_cmd("codeql")
     has_semgrep = has_cmd("semgrep")
@@ -1016,9 +1068,26 @@ def main() -> None:
 
     counts = Counter()
     errors: list[str] = []
+    done_repos: set[str] = set()
+    if args.resume:
+        done_repos |= load_done_repos_from_state(resume_state)
+        # Backward compatibility for runs before sidecar existed.
+        if not done_repos:
+            done_repos |= load_done_repos_from_output(args.out)
+    else:
+        if args.out.exists():
+            args.out.unlink()
+        if resume_state.exists():
+            resume_state.unlink()
 
-    with args.out.open("wb") as wf:
+    mode = "ab" if args.resume else "wb"
+    resume_state.parent.mkdir(parents=True, exist_ok=True)
+
+    with args.out.open(mode) as wf, resume_state.open("a", encoding="utf-8") as sf:
         for repo_full_name in tqdm(sorted(chats_by_repo.keys()), desc="static-per-repo"):
+            if repo_full_name in done_repos:
+                counts["repos_skipped_resume"] += 1
+                continue
             chat_ids = sorted(chats_by_repo[repo_full_name])
             repo_path = repo_path_from_full_name(args.repos_root, repo_full_name)
             if not repo_path:
@@ -1054,6 +1123,9 @@ def main() -> None:
                             wf.write(orjson.dumps(rec) + b"\n")
                             counts["findings"] += 1
                     counts["semgrep_repo_fallback_to_snippet"] += 1
+                sf.write(orjson.dumps({"repo_full_name": repo_full_name}).decode("utf-8") + "\n")
+                sf.flush()
+                done_repos.add(repo_full_name)
                 continue
 
             repo_items: list[tuple[str, dict[str, Any], dict[str, Any]]] = []
@@ -1312,6 +1384,10 @@ def main() -> None:
                     wf.write(orjson.dumps(rec) + b"\n")
                     counts["findings"] += 1
 
+            sf.write(orjson.dumps({"repo_full_name": repo_full_name}).decode("utf-8") + "\n")
+            sf.flush()
+            done_repos.add(repo_full_name)
+
     summary = {
         "candidates_total": len(candidates),
         "repos_total": len(chats_by_repo),
@@ -1340,8 +1416,11 @@ def main() -> None:
         "spotbugs_repo_scanned": counts["spotbugs_repo_scanned"],
         "eslint_repo_scanned": counts["eslint_repo_scanned"],
         "repo_not_found": counts["repo_not_found"],
+        "repos_skipped_resume": counts["repos_skipped_resume"],
         "errors_count": len(errors),
         "errors_preview": errors[:40],
+        "resume": args.resume,
+        "resume_state": str(resume_state),
         "out": str(args.out),
     }
 
