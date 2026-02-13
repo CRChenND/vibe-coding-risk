@@ -1,43 +1,43 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="980" height="560" viewBox="0 0 980 560">
 <rect width="100%" height="100%" fill="white"/>
-<text x="490.0" y="40" text-anchor="middle" font-family="Arial" font-size="26" font-weight="700">Attribution Distribution (N=381)</text>
+<text x="490.0" y="40" text-anchor="middle" font-family="Arial" font-size="26" font-weight="700">Attribution Distribution (N=619)</text>
 <line x1="110" y1="450" x2="940" y2="450" stroke="#222" stroke-width="2"/>
 <line x1="110" y1="80" x2="110" y2="450" stroke="#222" stroke-width="2"/>
 <line x1="104" y1="450.0" x2="110" y2="450.0" stroke="#222" stroke-width="1"/>
 <text x="100" y="455.0" text-anchor="end" font-family="Arial" font-size="12" fill="#444">0.000</text>
 <line x1="110" y1="450.0" x2="940" y2="450.0" stroke="#eee" stroke-width="1"/>
 <line x1="104" y1="376.0" x2="110" y2="376.0" stroke="#222" stroke-width="1"/>
-<text x="100" y="381.0" text-anchor="end" font-family="Arial" font-size="12" fill="#444">0.102</text>
+<text x="100" y="381.0" text-anchor="end" font-family="Arial" font-size="12" fill="#444">0.109</text>
 <line x1="110" y1="376.0" x2="940" y2="376.0" stroke="#eee" stroke-width="1"/>
 <line x1="104" y1="302.0" x2="110" y2="302.0" stroke="#222" stroke-width="1"/>
-<text x="100" y="307.0" text-anchor="end" font-family="Arial" font-size="12" fill="#444">0.205</text>
+<text x="100" y="307.0" text-anchor="end" font-family="Arial" font-size="12" fill="#444">0.218</text>
 <line x1="110" y1="302.0" x2="940" y2="302.0" stroke="#eee" stroke-width="1"/>
 <line x1="104" y1="228.0" x2="110" y2="228.0" stroke="#222" stroke-width="1"/>
-<text x="100" y="233.0" text-anchor="end" font-family="Arial" font-size="12" fill="#444">0.307</text>
+<text x="100" y="233.0" text-anchor="end" font-family="Arial" font-size="12" fill="#444">0.327</text>
 <line x1="110" y1="228.0" x2="940" y2="228.0" stroke="#eee" stroke-width="1"/>
 <line x1="104" y1="154.0" x2="110" y2="154.0" stroke="#222" stroke-width="1"/>
-<text x="100" y="159.0" text-anchor="end" font-family="Arial" font-size="12" fill="#444">0.409</text>
+<text x="100" y="159.0" text-anchor="end" font-family="Arial" font-size="12" fill="#444">0.436</text>
 <line x1="110" y1="154.0" x2="940" y2="154.0" stroke="#eee" stroke-width="1"/>
 <line x1="104" y1="80.0" x2="110" y2="80.0" stroke="#222" stroke-width="1"/>
-<text x="100" y="85.0" text-anchor="end" font-family="Arial" font-size="12" fill="#444">0.512</text>
+<text x="100" y="85.0" text-anchor="end" font-family="Arial" font-size="12" fill="#444">0.544</text>
 <line x1="110" y1="80.0" x2="940" y2="80.0" stroke="#eee" stroke-width="1"/>
 <text x="28" y="265.0" transform="rotate(-90 28,265.0)" font-family="Arial" font-size="14" fill="#444">Ratio</text>
-<rect x="149.7" y="389.3" width="92" height="60.7" fill="#1f77b4" rx="4"/>
-<text x="195.7" y="381.3" text-anchor="middle" font-family="Arial" font-size="11" fill="#111">0.084</text>
+<rect x="149.7" y="400.6" width="92" height="49.4" fill="#1f77b4" rx="4"/>
+<text x="195.7" y="392.6" text-anchor="middle" font-family="Arial" font-size="11" fill="#111">0.073</text>
 <text x="195.7" y="470" text-anchor="middle" font-family="Arial" font-size="11" fill="#333" transform="rotate(25 195.7,470)">user_requested</text>
 <rect x="281.4" y="80.0" width="92" height="370.0" fill="#1f77b4" rx="4"/>
-<text x="327.4" y="72.0" text-anchor="middle" font-family="Arial" font-size="11" fill="#111">0.512</text>
+<text x="327.4" y="72.0" text-anchor="middle" font-family="Arial" font-size="11" fill="#111">0.544</text>
 <text x="327.4" y="470" text-anchor="middle" font-family="Arial" font-size="11" fill="#333" transform="rotate(25 327.4,470)">asst_over_impl</text>
-<rect x="413.1" y="410.2" width="92" height="39.8" fill="#1f77b4" rx="4"/>
-<text x="459.1" y="402.2" text-anchor="middle" font-family="Arial" font-size="11" fill="#111">0.055</text>
+<rect x="413.1" y="412.7" width="92" height="37.3" fill="#1f77b4" rx="4"/>
+<text x="459.1" y="404.7" text-anchor="middle" font-family="Arial" font-size="11" fill="#111">0.055</text>
 <text x="459.1" y="470" text-anchor="middle" font-family="Arial" font-size="11" fill="#333" transform="rotate(25 459.1,470)">asst_hallucinated</text>
-<rect x="544.9" y="209.0" width="92" height="241.0" fill="#1f77b4" rx="4"/>
-<text x="590.9" y="201.0" text-anchor="middle" font-family="Arial" font-size="11" fill="#111">0.333</text>
+<rect x="544.9" y="239.2" width="92" height="210.8" fill="#1f77b4" rx="4"/>
+<text x="590.9" y="231.2" text-anchor="middle" font-family="Arial" font-size="11" fill="#111">0.310</text>
 <text x="590.9" y="470" text-anchor="middle" font-family="Arial" font-size="11" fill="#333" transform="rotate(25 590.9,470)">inherited_context</text>
-<rect x="676.6" y="450.0" width="92" height="0.0" fill="#1f77b4" rx="4"/>
-<text x="722.6" y="442.0" text-anchor="middle" font-family="Arial" font-size="11" fill="#111">0.000</text>
+<rect x="676.6" y="448.9" width="92" height="1.1" fill="#1f77b4" rx="4"/>
+<text x="722.6" y="440.9" text-anchor="middle" font-family="Arial" font-size="11" fill="#111">0.002</text>
 <text x="722.6" y="470" text-anchor="middle" font-family="Arial" font-size="11" fill="#333" transform="rotate(25 722.6,470)">mixed</text>
-<rect x="808.3" y="438.6" width="92" height="11.4" fill="#1f77b4" rx="4"/>
-<text x="854.3" y="430.6" text-anchor="middle" font-family="Arial" font-size="11" fill="#111">0.016</text>
+<rect x="808.3" y="439.0" width="92" height="11.0" fill="#1f77b4" rx="4"/>
+<text x="854.3" y="431.0" text-anchor="middle" font-family="Arial" font-size="11" fill="#111">0.016</text>
 <text x="854.3" y="470" text-anchor="middle" font-family="Arial" font-size="11" fill="#333" transform="rotate(25 854.3,470)">insufficient</text>
 </svg>

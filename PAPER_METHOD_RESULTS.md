@@ -1,7 +1,7 @@
 # Trajectory Causal Attribution of Security Risks in Vibe-Coding Conversations
 
 ## Abstract
-This project studies how security risks emerge and evolve in assistant-generated coding conversations. We build a pipeline that starts from risky assistant outputs, traces conversational context, attributes root causes, and quantifies risk trajectories over turns. On 381 risky samples, assistant-driven causes dominate (`56.69%` assistant-first vs `41.73%` user/context-first), with `assistant_over_implemented` as the largest attribution class (`51.18%`). Risk emergence is front-loaded (`58.06%` first appear at turn `0-1`) but escalation shows a long tail (mention-gap `p90=112`).
+This project studies how security risks emerge and evolve in assistant-generated coding conversations. We build a pipeline that starts from risky assistant outputs, traces conversational context, attributes root causes, and quantifies risk trajectories over turns. On 619 analyzed risky samples, assistant-driven causes dominate (`59.94%` assistant-first vs `38.29%` user/context-first), with `assistant_over_implemented` as the largest attribution class (`54.44%`). Risk emergence is front-loaded (`55.70%` first appear at turn `0-1`) but escalation still shows a long tail (mention-gap `p90=87`).
 
 ## 1. Method
 
@@ -86,22 +86,22 @@ Computation for CWE `x`:
 ## 2. Results
 
 ### 2.1 Dataset Size
-- Risky backtrace rows: `381`
-- Attribution rows: `381`
-- Joined analysis rows: `381`
-- Attribution fallback rows (`judge_error`): `6`
+- Risky backtrace rows: `619`
+- Attribution rows: `619`
+- Joined analysis rows: `619`
+- Attribution fallback rows (`judge_error`): `16`
 
-Insight: the end-to-end join coverage is complete (`381 -> 381`), with a small fallback portion (`1.57%`).
+Insight: the analysis now covers a substantially larger risky set (`619` joined rows), with limited attribution fallback (`2.58%`).
 
-Interpretation: the analysis is based on the full risky set, so the result patterns are not from sample truncation. The small fallback subset should still be treated as minor noise in fine-grained attribution splits.
+Interpretation: compared with earlier runs, scale-up increases external validity of the observed patterns. The fallback subset remains small but non-zero, so fine-grained attribution comparisons should still be interpreted with slight caution.
 
 ### 2.2 Root-Cause Attribution Distribution
-- `assistant_over_implemented`: `195/381` (`51.18%`)
-- `inherited_or_context_risk`: `127/381` (`33.33%`)
-- `user_requested_risk`: `32/381` (`8.40%`)
-- `assistant_hallucinated_risk`: `21/381` (`5.51%`)
-- `insufficient_evidence`: `6/381` (`1.57%`)
-- `mixed_causality`: `0`
+- `assistant_over_implemented`: `337/619` (`54.44%`)
+- `inherited_or_context_risk`: `192/619` (`31.02%`)
+- `user_requested_risk`: `45/619` (`7.27%`)
+- `assistant_hallucinated_risk`: `34/619` (`5.49%`)
+- `insufficient_evidence`: `10/619` (`1.62%`)
+- `mixed_causality`: `1/619` (`0.16%`)
 
 Insight: the dominant mode is assistant-side over-implementation, not explicit user demand for insecure behavior.
 
@@ -133,11 +133,11 @@ Empirical evidence (anonymized excerpts):
 ### 2.4 CWE Concentration
 Top CWE categories in current risky set:
 
-- `CWE-312`: `110`
-- `CWE-79`: `59`
-- `CWE-UNKNOWN`: `44`
-- `CWE-327`: `32`
-- `CWE-459`: `32`
+- `CWE-312`: `155`
+- `CWE-79`: `103`
+- `CWE-UNKNOWN`: `76`
+- `CWE-327`: `44`
+- `CWE-459`: `41`
 
 Insight: risk mass is concentrated in a few CWE families, especially secret/plaintext exposure and injection-like classes.
 
@@ -176,12 +176,12 @@ python -m http.server 8080
 ![Top CWE Counts](paper_figures/fig2_top_cwe_counts.svg)
 
 ### 2.5 Trajectory Findings
-- Emergence coverage (has first mention): `279/381`
-- Early emergence: `turn 0-1` accounts for `162/279` (`58.06%`)
+- Emergence coverage (has first mention): `447/619`
+- Early emergence: `turn 0-1` accounts for `249/447` (`55.70%`)
 - Escalation depth (median / p90):
-  - mention gap: `12 / 112`
-  - concretization gap: `14 / 104`
-  - persistence gap: `24 / 116`
+  - mention gap: `8 / 87`
+  - concretization gap: `8 / 82`
+  - persistence gap: `14 / 100`
 
 Insight: risk tends to appear early, but many cases continue to evolve over long turn horizons.
 
@@ -190,17 +190,17 @@ Interpretation: first-turn safeguards are necessary but insufficient; sustained 
 ![Risk Emergence by Turn Bucket](paper_figures/fig3_risk_emergence_bucket.svg)
 
 ### 2.6 Initiation and Regression
-- Assistant-first initiation (proxy): `216/381` (`56.69%`)
-- User/context-first initiation (proxy): `159/381` (`41.73%`)
-- Unclear initiation: `6/381` (`1.57%`)
-- Assistant security regression rate (proxy): `121/216` (`56.02%`)
+- Assistant-first initiation (proxy): `371/619` (`59.94%`)
+- User/context-first initiation (proxy): `237/619` (`38.29%`)
+- Unclear initiation: `11/619` (`1.78%`)
+- Assistant security regression rate (proxy): `197/371` (`53.10%`)
 
 Representative regression rates by CWE (`n>=5` assistant-driven cases):
-- `CWE-522`: `0.8750`
-- `CWE-200`: `0.8125`
-- `CWE-327`: `0.7857`
-- `CWE-79`: `0.7097`
-- `CWE-312`: `0.6829`
+- `CWE-522`: `0.8333`
+- `CWE-200`: `0.8065`
+- `CWE-312`: `0.6515`
+- `CWE-306`: `0.6500`
+- `CWE-327`: `0.6316`
 
 Insight: once an assistant-driven path starts, regression is common (`>50%`) and especially severe in several high-risk CWE families.
 
@@ -211,9 +211,9 @@ Interpretation: this pattern supports guardrails that monitor not only initial r
 ### 2.7 Temporal Security Degradation Curves
 Using turn-level first-risk events (`first_mention_turn`) and right-censoring when no mention is found before the risky assistant turn, we estimate a discrete-time survival curve.
 
-- `P(remaining secure | turn t)` drops from `0.8924` at `t=0` to `0.5748` at `t=1`
-- By `t=5`, remaining-secure probability is `0.4454`
-- By `t=20`, remaining-secure probability is `0.2827`
+- `P(remaining secure | turn t)` drops from `0.8885` at `t=0` to `0.5977` at `t=1`
+- By `t=5`, remaining-secure probability is `0.4659`
+- By `t=20`, remaining-secure probability is `0.2774`
 
 Insight: security degradation is front-loaded, with a sharp early drop followed by a slower long-tail decline.
 
@@ -226,8 +226,8 @@ We aggregate source attribution into three buckets (`assistant_driven`, `user_dr
 
 Examples from high-frequency CWE groups:
 
-- Strong assistant-driven: `CWE-459 (1.0000)`, `CWE-306 (0.9231)`, `CWE-200 (0.8000)`
-- Strong user-driven: `CWE-312 (0.5727)`, `CWE-327 (0.5625)`, `CWE-UNKNOWN (0.5909)`
+- Strong assistant-driven: `CWE-459 (1.0000)`, `CWE-306 (0.8696)`, `CWE-200 (0.7750)`
+- Strong user-driven: `CWE-327 (0.5682)`, `CWE-312 (0.5290)`, `CWE-UNKNOWN (0.4868)`
 
 Insight: CWE classes exhibit distinct causal signatures rather than a single universal source pattern.
 
@@ -244,7 +244,7 @@ Overall, the evidence indicates that risk formation is both source-sensitive and
 - Attribution and initiation are model-assisted labels and can be prompt-sensitive.
 - `CWE-UNKNOWN` remains non-trivial, limiting fine-grained security interpretation.
 - Regression and initiation are proxy metrics, not manually adjudicated causal truth.
-- A small subset (`6` rows) used error-fallback attribution and may add minor noise.
+- A small subset (`16` rows) used error-fallback attribution and may add minor noise.
 
 ## 5. Reproducibility
 The numbers in this document are computed from:

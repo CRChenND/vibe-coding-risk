@@ -7,49 +7,49 @@
 <text x="100" y="455.0" text-anchor="end" font-family="Arial" font-size="12" fill="#444">0.000</text>
 <line x1="110" y1="450.0" x2="940" y2="450.0" stroke="#eee" stroke-width="1"/>
 <line x1="104" y1="376.0" x2="110" y2="376.0" stroke="#222" stroke-width="1"/>
-<text x="100" y="381.0" text-anchor="end" font-family="Arial" font-size="12" fill="#444">0.175</text>
+<text x="100" y="381.0" text-anchor="end" font-family="Arial" font-size="12" fill="#444">0.167</text>
 <line x1="110" y1="376.0" x2="940" y2="376.0" stroke="#eee" stroke-width="1"/>
 <line x1="104" y1="302.0" x2="110" y2="302.0" stroke="#222" stroke-width="1"/>
-<text x="100" y="307.0" text-anchor="end" font-family="Arial" font-size="12" fill="#444">0.350</text>
+<text x="100" y="307.0" text-anchor="end" font-family="Arial" font-size="12" fill="#444">0.333</text>
 <line x1="110" y1="302.0" x2="940" y2="302.0" stroke="#eee" stroke-width="1"/>
 <line x1="104" y1="228.0" x2="110" y2="228.0" stroke="#222" stroke-width="1"/>
-<text x="100" y="233.0" text-anchor="end" font-family="Arial" font-size="12" fill="#444">0.525</text>
+<text x="100" y="233.0" text-anchor="end" font-family="Arial" font-size="12" fill="#444">0.500</text>
 <line x1="110" y1="228.0" x2="940" y2="228.0" stroke="#eee" stroke-width="1"/>
 <line x1="104" y1="154.0" x2="110" y2="154.0" stroke="#222" stroke-width="1"/>
-<text x="100" y="159.0" text-anchor="end" font-family="Arial" font-size="12" fill="#444">0.700</text>
+<text x="100" y="159.0" text-anchor="end" font-family="Arial" font-size="12" fill="#444">0.667</text>
 <line x1="110" y1="154.0" x2="940" y2="154.0" stroke="#eee" stroke-width="1"/>
 <line x1="104" y1="80.0" x2="110" y2="80.0" stroke="#222" stroke-width="1"/>
-<text x="100" y="85.0" text-anchor="end" font-family="Arial" font-size="12" fill="#444">0.875</text>
+<text x="100" y="85.0" text-anchor="end" font-family="Arial" font-size="12" fill="#444">0.833</text>
 <line x1="110" y1="80.0" x2="940" y2="80.0" stroke="#eee" stroke-width="1"/>
 <text x="28" y="265.0" transform="rotate(-90 28,265.0)" font-family="Arial" font-size="14" fill="#444">Regression rate</text>
 <rect x="135.5" y="80.0" width="55" height="370.0" fill="#d62728" rx="4"/>
-<text x="163.0" y="72.0" text-anchor="middle" font-family="Arial" font-size="11" fill="#111">0.875</text>
+<text x="163.0" y="72.0" text-anchor="middle" font-family="Arial" font-size="11" fill="#111">0.833</text>
 <text x="163.0" y="470" text-anchor="middle" font-family="Arial" font-size="11" fill="#333" transform="rotate(25 163.0,470)">CWE-522</text>
-<rect x="215.9" y="106.4" width="55" height="343.6" fill="#d62728" rx="4"/>
-<text x="243.4" y="98.4" text-anchor="middle" font-family="Arial" font-size="11" fill="#111">0.812</text>
+<rect x="215.9" y="91.9" width="55" height="358.1" fill="#d62728" rx="4"/>
+<text x="243.4" y="83.9" text-anchor="middle" font-family="Arial" font-size="11" fill="#111">0.806</text>
 <text x="243.4" y="470" text-anchor="middle" font-family="Arial" font-size="11" fill="#333" transform="rotate(25 243.4,470)">CWE-200</text>
-<rect x="296.4" y="117.8" width="55" height="332.2" fill="#d62728" rx="4"/>
-<text x="323.9" y="109.8" text-anchor="middle" font-family="Arial" font-size="11" fill="#111">0.786</text>
-<text x="323.9" y="470" text-anchor="middle" font-family="Arial" font-size="11" fill="#333" transform="rotate(25 323.9,470)">CWE-327</text>
-<rect x="376.8" y="149.9" width="55" height="300.1" fill="#d62728" rx="4"/>
-<text x="404.3" y="141.9" text-anchor="middle" font-family="Arial" font-size="11" fill="#111">0.710</text>
-<text x="404.3" y="470" text-anchor="middle" font-family="Arial" font-size="11" fill="#333" transform="rotate(25 404.3,470)">CWE-79</text>
-<rect x="457.3" y="161.2" width="55" height="288.8" fill="#d62728" rx="4"/>
-<text x="484.8" y="153.2" text-anchor="middle" font-family="Arial" font-size="11" fill="#111">0.683</text>
-<text x="484.8" y="470" text-anchor="middle" font-family="Arial" font-size="11" fill="#333" transform="rotate(25 484.8,470)">CWE-312</text>
-<rect x="537.7" y="203.3" width="55" height="246.7" fill="#d62728" rx="4"/>
-<text x="565.2" y="195.3" text-anchor="middle" font-family="Arial" font-size="11" fill="#111">0.583</text>
-<text x="565.2" y="470" text-anchor="middle" font-family="Arial" font-size="11" fill="#333" transform="rotate(25 565.2,470)">CWE-306</text>
-<rect x="618.2" y="238.6" width="55" height="211.4" fill="#d62728" rx="4"/>
-<text x="645.7" y="230.6" text-anchor="middle" font-family="Arial" font-size="11" fill="#111">0.500</text>
+<rect x="296.4" y="160.7" width="55" height="289.3" fill="#d62728" rx="4"/>
+<text x="323.9" y="152.7" text-anchor="middle" font-family="Arial" font-size="11" fill="#111">0.651</text>
+<text x="323.9" y="470" text-anchor="middle" font-family="Arial" font-size="11" fill="#333" transform="rotate(25 323.9,470)">CWE-312</text>
+<rect x="376.8" y="161.4" width="55" height="288.6" fill="#d62728" rx="4"/>
+<text x="404.3" y="153.4" text-anchor="middle" font-family="Arial" font-size="11" fill="#111">0.650</text>
+<text x="404.3" y="470" text-anchor="middle" font-family="Arial" font-size="11" fill="#333" transform="rotate(25 404.3,470)">CWE-306</text>
+<rect x="457.3" y="169.6" width="55" height="280.4" fill="#d62728" rx="4"/>
+<text x="484.8" y="161.6" text-anchor="middle" font-family="Arial" font-size="11" fill="#111">0.632</text>
+<text x="484.8" y="470" text-anchor="middle" font-family="Arial" font-size="11" fill="#333" transform="rotate(25 484.8,470)">CWE-327</text>
+<rect x="537.7" y="179.1" width="55" height="270.9" fill="#d62728" rx="4"/>
+<text x="565.2" y="171.1" text-anchor="middle" font-family="Arial" font-size="11" fill="#111">0.610</text>
+<text x="565.2" y="470" text-anchor="middle" font-family="Arial" font-size="11" fill="#333" transform="rotate(25 565.2,470)">CWE-79</text>
+<rect x="618.2" y="228.0" width="55" height="222.0" fill="#d62728" rx="4"/>
+<text x="645.7" y="220.0" text-anchor="middle" font-family="Arial" font-size="11" fill="#111">0.500</text>
 <text x="645.7" y="470" text-anchor="middle" font-family="Arial" font-size="11" fill="#333" transform="rotate(25 645.7,470)">CWE-321</text>
-<rect x="698.6" y="262.1" width="55" height="187.9" fill="#d62728" rx="4"/>
-<text x="726.1" y="254.1" text-anchor="middle" font-family="Arial" font-size="11" fill="#111">0.444</text>
+<rect x="698.6" y="239.7" width="55" height="210.3" fill="#d62728" rx="4"/>
+<text x="726.1" y="231.7" text-anchor="middle" font-family="Arial" font-size="11" fill="#111">0.474</text>
 <text x="726.1" y="470" text-anchor="middle" font-family="Arial" font-size="11" fill="#333" transform="rotate(25 726.1,470)">CWE-UNKNOWN</text>
-<rect x="779.1" y="323.1" width="55" height="126.9" fill="#d62728" rx="4"/>
-<text x="806.6" y="315.1" text-anchor="middle" font-family="Arial" font-size="11" fill="#111">0.300</text>
-<text x="806.6" y="470" text-anchor="middle" font-family="Arial" font-size="11" fill="#333" transform="rotate(25 806.6,470)">CWE-20</text>
-<rect x="859.5" y="397.1" width="55" height="52.9" fill="#d62728" rx="4"/>
-<text x="887.0" y="389.1" text-anchor="middle" font-family="Arial" font-size="11" fill="#111">0.125</text>
-<text x="887.0" y="470" text-anchor="middle" font-family="Arial" font-size="11" fill="#333" transform="rotate(25 887.0,470)">CWE-459</text>
+<rect x="779.1" y="283.5" width="55" height="166.5" fill="#d62728" rx="4"/>
+<text x="806.6" y="275.5" text-anchor="middle" font-family="Arial" font-size="11" fill="#111">0.375</text>
+<text x="806.6" y="470" text-anchor="middle" font-family="Arial" font-size="11" fill="#333" transform="rotate(25 806.6,470)">CWE-78</text>
+<rect x="859.5" y="353.5" width="55" height="96.5" fill="#d62728" rx="4"/>
+<text x="887.0" y="345.5" text-anchor="middle" font-family="Arial" font-size="11" fill="#111">0.217</text>
+<text x="887.0" y="470" text-anchor="middle" font-family="Arial" font-size="11" fill="#333" transform="rotate(25 887.0,470)">CWE-20</text>
 </svg>
