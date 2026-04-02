@@ -50,6 +50,26 @@ RISK_PREVIEW_PATTERNS = [
     re.compile(r"\benv\s+\|\s+grep\b[^\n]*", re.I),
 ]
 
+SECRET_PATTERNS: list[tuple[re.Pattern[str], str]] = [
+    (re.compile(r"(Authorization:\s*Bearer\s+)[A-Za-z0-9._-]+", re.I), r"\1[REDACTED_TOKEN]"),
+    (
+        re.compile(
+            r"\b([A-Z0-9_]*(?:API|AUTH|TOKEN|SECRET|PASSWORD|KEY|CLIENT_ID|CLIENT_SECRET)[A-Z0-9_]*)\s*([:=])\s*([^\s\"'`]+)",
+            re.I,
+        ),
+        r"\1\2[REDACTED]",
+    ),
+    (re.compile(r"\bsk-[A-Za-z0-9_-]{10,}\b"), "[REDACTED_OPENAI_KEY]"),
+    (re.compile(r"\b(?:pk|sk)\.[A-Za-z0-9._-]{20,}\b"), "[REDACTED_MAPBOX_TOKEN]"),
+    (re.compile(r"\bAIza[0-9A-Za-z_-]{20,}\b"), "[REDACTED_GOOGLE_API_KEY]"),
+    (re.compile(r"\b[0-9]+-[0-9A-Za-z._-]+\.apps\.googleusercontent\.com\b"), "[REDACTED_GOOGLE_CLIENT_ID]"),
+    (re.compile(r"\bpplx-[A-Za-z0-9_-]{10,}\b", re.I), "[REDACTED_PERPLEXITY_KEY]"),
+    (re.compile(r"\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9._-]+\.[A-Za-z0-9._-]+\b"), "[REDACTED_JWT]"),
+    (re.compile(r"(mongodb(?:\+srv)?://[^:\s/]+:)[^@\s/]+(@)", re.I), r"\1[REDACTED]\2"),
+    (re.compile(r"(postgres(?:ql)?://[^:\s/]+:)[^@\s/]+(@)", re.I), r"\1[REDACTED]\2"),
+    (re.compile(r"https://hooks\.slack\.com/services/[A-Za-z0-9/_-]+", re.I), "[REDACTED_SLACK_WEBHOOK]"),
+]
+
 
 def load_csv(path: Path) -> list[dict[str, str]]:
     with path.open(encoding="utf-8", newline="") as f:
@@ -102,10 +122,19 @@ def p90(values: list[int]) -> int | None:
     return arr[int(0.9 * (len(arr) - 1))]
 
 
+def sanitize_text(text: str | None) -> str:
+    if not text:
+        return ""
+    sanitized = text
+    for pattern, repl in SECRET_PATTERNS:
+        sanitized = pattern.sub(repl, sanitized)
+    return sanitized
+
+
 def truncate(text: str | None, limit: int = 220) -> str:
     if not text:
         return ""
-    compact = " ".join(text.split())
+    compact = " ".join(sanitize_text(text).split())
     if len(compact) <= limit:
         return compact
     return compact[: limit - 3] + "..."
@@ -114,7 +143,7 @@ def truncate(text: str | None, limit: int = 220) -> str:
 def focused_preview(text: str | None, limit: int = 700) -> str:
     if not text:
         return ""
-    compact = " ".join(text.split())
+    compact = " ".join(sanitize_text(text).split())
     if len(compact) <= limit:
         return compact
 
@@ -371,7 +400,7 @@ def message_text(message: dict) -> str:
             content = block.get("content")
             if isinstance(content, str) and content.strip():
                 parts.append(content.strip())
-    return "\n\n".join(parts)
+    return sanitize_text("\n\n".join(parts))
 
 
 def nearest_prior_user_message(messages: list[dict], turn: int) -> tuple[int | None, str]:
@@ -421,7 +450,7 @@ def build_stage_context(chat_path: Path, row: dict[str, str], risky_row: dict[st
         role = str(msg.get("role", "")).lower() or "unknown"
         text = message_text(msg)
         if label == "Final Risk Output":
-            exact_risky_text = str(risky_row.get("assistant_candidate_text_short") or "").strip()
+            exact_risky_text = sanitize_text(str(risky_row.get("assistant_candidate_text_short") or "").strip())
             if exact_risky_text:
                 text = exact_risky_text
         nearby_user_turn, nearby_user_text = nearest_prior_user_message(messages, turn)
@@ -431,10 +460,10 @@ def build_stage_context(chat_path: Path, row: dict[str, str], risky_row: dict[st
                 "turn": turn,
                 "role": role,
                 "note": note,
-                "text": text,
+                "text": sanitize_text(text),
                 "preview": focused_preview(text, 700),
                 "nearby_user_turn": nearby_user_turn,
-                "nearby_user_text": nearby_user_text,
+                "nearby_user_text": sanitize_text(nearby_user_text),
                 "nearby_user_preview": focused_preview(nearby_user_text, 320),
             }
         )
@@ -533,9 +562,9 @@ def build_findings(risk_escalation_rows: list[dict[str, object]], cwe_by_fid: di
                 "assistant_message_index": to_int(risky["assistant_message_index"]),
                 "assistant_block_index": to_int(risky["assistant_block_index"]),
                 "nearest_user_message_index": to_int(risky["nearest_user_message_index"]),
-                "nearest_user_text_short": risky["nearest_user_text_short"],
-                "nearest_user_commands": risky["nearest_user_commands"],
-                "assistant_candidate_text_short": risky["assistant_candidate_text_short"],
+                "nearest_user_text_short": sanitize_text(risky["nearest_user_text_short"]),
+                "nearest_user_commands": sanitize_text(risky["nearest_user_commands"]),
+                "assistant_candidate_text_short": sanitize_text(risky["assistant_candidate_text_short"]),
                 "assistant_candidate_preview": truncate(risky["assistant_candidate_text_short"], 280),
                 "nearest_user_preview": truncate(risky["nearest_user_text_short"], 220),
                 "trajectory_context": build_stage_context(chat_path, row, risky),

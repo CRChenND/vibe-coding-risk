@@ -1,5 +1,7 @@
 # Dataset
 data/
+!risk_explorer/data/
+!risk_explorer/data/site_data.json
 
 # Environment
 .env
