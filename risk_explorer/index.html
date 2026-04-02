@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Vibe-Coding Risk Explorer</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="hero">
+        <div class="hero-copy">
+          <h1>Vibe-Coding Risk Explorer</h1>
+          <p id="hero-subtitle" class="hero-subtitle">
+            Load the latest code-risk analysis and explore both key insights and individual risky findings.
+          </p>
+          <div class="hero-actions">
+            <a class="hero-link" href="#summary">Start with key insights</a>
+            <a class="hero-link subtle" href="#explore">Jump to raw findings</a>
+          </div>
+        </div>
+        <div class="hero-metrics" id="hero-metrics"></div>
+      </header>
+
+      <main class="main-grid">
+        <section class="panel" id="summary">
+          <div class="section-head">
+            <div>
+              <p class="section-kicker">Summary</p>
+              <h2>Key Insights</h2>
+              <p class="section-copy">
+                These are the highest-signal takeaways from the current dataset, designed to help you understand what
+                matters before you inspect any individual finding.
+              </p>
+            </div>
+          </div>
+          <div id="insight-grid" class="insight-grid"></div>
+        </section>
+
+        <section class="panel" id="patterns">
+          <div class="section-head">
+            <div>
+              <p class="section-kicker">Patterns</p>
+              <h2>Attribution and CWE Mix <span class="term inline-term" data-tip="Attribution: who or what mainly introduced the risky direction. CWE mix: which weakness families appear most often.">?</span></h2>
+              <p class="section-copy">
+                Assistant-side over-implementation dominates the high-precision subset, while a small set of CWE families
+                accounts for most retained risk.
+              </p>
+            </div>
+          </div>
+          <div class="chart-grid two-col">
+            <div class="chart-card">
+              <h3>Attribution</h3>
+              <div id="attribution-chart" class="chart"></div>
+              <p class="chart-note">
+                Most retained findings are assistant-driven, especially through unnecessary risky expansion beyond the user's request.
+              </p>
+            </div>
+            <div class="chart-card">
+              <h3>Top CWE</h3>
+              <div id="top-cwe-chart" class="chart"></div>
+              <p class="chart-note">
+                Plaintext secret exposure, injection-like behavior, and sensitive information leakage remain the most concentrated risk families.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="section-head">
+            <div>
+              <p class="section-kicker">Patterns</p>
+              <h2>Risk Emergence <span class="term inline-term" data-tip="Emergence asks when a risk first becomes concrete enough to count as a real risky implementation step.">?</span></h2>
+              <p class="section-copy">
+                Risk often becomes concrete early, but a long conversational tail still matters.
+              </p>
+            </div>
+          </div>
+          <div class="chart-card full">
+            <h3>Risk Emergence Buckets</h3>
+            <div id="emergence-chart" class="chart"></div>
+            <p class="chart-note">
+              Early-turn concretization is common, but many risky trajectories still take multiple turns to fully surface.
+            </p>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="section-head">
+            <div>
+              <p class="section-kicker">Patterns</p>
+              <h2>Attribution Source by CWE <span class="term inline-term" data-tip="For each weakness family, compare the share that is mostly assistant-driven versus user/context-driven.">?</span></h2>
+              <p class="section-copy">
+                Different CWE families have different causal signatures: some are mostly assistant-generated, while others are mostly inherited from user or context material.
+              </p>
+            </div>
+          </div>
+          <div class="chart-card full">
+            <div id="source-by-cwe-chart" class="chart"></div>
+          </div>
+        </section>
+
+        <section class="panel explorer-panel" id="explore">
+          <div class="section-head">
+            <div>
+              <p class="section-kicker">Explore</p>
+              <h2>Findings Browser <span class="term inline-term" data-tip="Click any row to inspect the user context, the risky assistant snippet, and a plain-language explanation of why it is risky.">?</span></h2>
+              <p class="section-copy">
+                Start with filters if you already know what you want, or scan the default list to inspect representative
+                risky snippets and their nearby user context.
+              </p>
+            </div>
+          </div>
+
+          <div class="filter-grid">
+            <label>
+              <span>Search</span>
+              <input id="search-input" type="search" placeholder="Search snippet, user text, finding id..." />
+            </label>
+            <label>
+              <span>CWE</span>
+              <select id="cwe-filter"></select>
+            </label>
+            <label>
+              <span>Cause</span>
+              <select id="cause-filter"></select>
+            </label>
+            <label>
+              <span>Severity</span>
+              <select id="severity-filter"></select>
+            </label>
+            <label>
+              <span>Block Type</span>
+              <select id="block-filter"></select>
+            </label>
+            <label>
+              <span>Sort</span>
+              <select id="sort-filter">
+                <option value="severity">Severity</option>
+                <option value="mention_gap">Risk Gap</option>
+                <option value="cwe">CWE</option>
+                <option value="cause">Cause</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="browse-starter">
+            <div>
+              <h3>Start From a Guided View</h3>
+              <p>
+                These entry points help you jump into common exploration paths instead of scanning the full dataset row by row.
+              </p>
+            </div>
+            <div id="preset-chips" class="preset-chips"></div>
+          </div>
+
+          <div class="explore-layout">
+            <div class="explore-primary">
+              <div class="card-section-head">
+                <h3>Representative Findings</h3>
+                <p>Showing a small, easier-to-scan slice of the current filtered result set. Click any card for full detail.</p>
+              </div>
+              <div id="finding-card-grid" class="finding-card-grid"></div>
+            </div>
+
+            <details class="table-disclosure">
+              <summary>Open Raw Table View</summary>
+              <div class="table-toolbar">
+                <div id="table-page-info" class="table-page-info">Showing 0-0 of 0</div>
+                <div class="table-pagination">
+                  <button id="table-prev" type="button" class="table-page-btn">Previous</button>
+                  <div id="table-page-label" class="table-page-label">Page 1 of 1</div>
+                  <button id="table-next" type="button" class="table-page-btn">Next</button>
+                </div>
+              </div>
+              <div class="table-wrap">
+                <table class="findings-table">
+                  <thead>
+                    <tr>
+                      <th>Finding</th>
+                      <th>CWE</th>
+                      <th>Cause</th>
+                      <th>Severity</th>
+                      <th>Snippet</th>
+                    </tr>
+                  </thead>
+                  <tbody id="findings-table-body"></tbody>
+                </table>
+              </div>
+            </details>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <aside id="detail-drawer" class="drawer hidden" aria-hidden="true">
+      <div class="drawer-card">
+        <button id="drawer-close" class="drawer-close" type="button">Close</button>
+        <div id="drawer-content"></div>
+      </div>
+    </aside>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

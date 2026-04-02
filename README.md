@@ -65,6 +65,20 @@ Recommended order:
 3. Run LLM judge
 4. Fuse results (optional)
 
+### Code-Risk Audit Outputs
+
+To rebuild the paper-facing code-risk subset plus the stricter audit outputs:
+
+```bash
+python3 analysis/scripts/analyze_code_risk_subset.py
+```
+
+This writes:
+
+- `analysis/output/code_risk_analysis/code_risk_audit.csv`: all `2264` code-risk rows with audit flags
+- `analysis/output/code_risk_analysis/high_precision_code_risk_rows.csv`: code-risk rows after removing obvious false positives and local-only/context-dependent rows
+- `analysis/output/code_risk_analysis/attribution_summary.json`: summary counts including `audit.n_obvious_false_positives`, `audit.n_local_only_context_rows`, and `audit.n_high_precision_rows`
+
 ### 1. Extract candidates
 
 Smoke test (20 chats):

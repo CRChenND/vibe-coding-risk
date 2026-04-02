@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import json
 import re
 from pathlib import Path
 from typing import Any
@@ -170,6 +171,34 @@ def load_chat(chat_path: Path, cache: dict[Path, dict[str, Any]]) -> dict[str, A
     return obj
 
 
+def iter_json_docs(raw: bytes) -> list[dict[str, Any]]:
+    text = raw.decode("utf-8").strip()
+    if not text:
+        return []
+
+    try:
+        parsed = orjson.loads(text)
+    except orjson.JSONDecodeError:
+        pass
+    else:
+        return [parsed] if isinstance(parsed, dict) else []
+
+    decoder = json.JSONDecoder()
+    docs: list[dict[str, Any]] = []
+    idx = 0
+    n = len(text)
+    while idx < n:
+        while idx < n and text[idx].isspace():
+            idx += 1
+        if idx >= n:
+            break
+        obj, next_idx = decoder.raw_decode(text, idx)
+        if isinstance(obj, dict):
+            docs.append(obj)
+        idx = next_idx
+    return docs
+
+
 def main() -> None:
     args = parse_args()
     args.out.parent.mkdir(parents=True, exist_ok=True)
@@ -186,93 +215,93 @@ def main() -> None:
     for raw in tqdm(rows, desc="backtrace"):
         if not raw.strip():
             continue
-        finding = orjson.loads(raw)
-        if args.only_risky and not bool(finding.get("is_risky")):
-            continue
-
-        candidate_id = str(finding.get("candidate_id", ""))
-        parsed = parse_candidate_id(candidate_id)
-        if not parsed:
-            continue
-        chat_id, message_index, block_index, candidate_index, candidate_type = parsed
-
-        chat_path = args.chats_dir / f"{chat_id}.md.json"
-        chat = load_chat(chat_path, chat_cache)
-        if not chat:
-            continue
-
-        messages = chat.get("messages") or []
-        if not isinstance(messages, list):
-            continue
-
-        # nearest N previous user messages
-        user_hits: list[dict[str, Any]] = []
-        for mi in range(min(message_index - 1, len(messages) - 1), -1, -1):
-            msg = messages[mi]
-            role = str(msg.get("role", "")).strip().lower()
-            if role != "user":
+        for finding in iter_json_docs(raw):
+            if args.only_risky and not bool(finding.get("is_risky")):
                 continue
-            text = user_text_from_message(msg)
-            cmds = extract_commands(text)
-            user_hits.append(
-                {
-                    "message_index": mi,
-                    "text": text,
-                    "commands": cmds,
-                }
+
+            candidate_id = str(finding.get("candidate_id", ""))
+            parsed = parse_candidate_id(candidate_id)
+            if not parsed:
+                continue
+            chat_id, message_index, block_index, candidate_index, candidate_type = parsed
+
+            chat_path = args.chats_dir / f"{chat_id}.md.json"
+            chat = load_chat(chat_path, chat_cache)
+            if not chat:
+                continue
+
+            messages = chat.get("messages") or []
+            if not isinstance(messages, list):
+                continue
+
+            # nearest N previous user messages
+            user_hits: list[dict[str, Any]] = []
+            for mi in range(min(message_index - 1, len(messages) - 1), -1, -1):
+                msg = messages[mi]
+                role = str(msg.get("role", "")).strip().lower()
+                if role != "user":
+                    continue
+                text = user_text_from_message(msg)
+                cmds = extract_commands(text)
+                user_hits.append(
+                    {
+                        "message_index": mi,
+                        "text": text,
+                        "commands": cmds,
+                    }
+                )
+                if len(user_hits) >= args.lookback_users:
+                    break
+
+            nearest = user_hits[0] if user_hits else {"message_index": None, "text": "", "commands": []}
+            assistant_msg = messages[message_index] if 0 <= message_index < len(messages) else {}
+            ablock_type, ablock_text = assistant_block_text(assistant_msg, block_index)
+            candidate_text = extract_assistant_candidate_text(
+                block_type=ablock_type,
+                block_text=ablock_text,
+                candidate_type=candidate_type,
+                candidate_index=candidate_index,
             )
-            if len(user_hits) >= args.lookback_users:
-                break
 
-        nearest = user_hits[0] if user_hits else {"message_index": None, "text": "", "commands": []}
-        assistant_msg = messages[message_index] if 0 <= message_index < len(messages) else {}
-        ablock_type, ablock_text = assistant_block_text(assistant_msg, block_index)
-        candidate_text = extract_assistant_candidate_text(
-            block_type=ablock_type,
-            block_text=ablock_text,
-            candidate_type=candidate_type,
-            candidate_index=candidate_index,
-        )
-
-        out = {
-            "finding_id": finding.get("finding_id"),
-            "candidate_id": candidate_id,
-            "chat_id": chat_id,
-            "chat_path": str(chat_path),
-            "candidate": {
-                "message_index": message_index,
-                "block_index": block_index,
-                "candidate_index": candidate_index,
-                "candidate_type": candidate_type,
-            },
-            "risk": {
-                "is_risky": bool(finding.get("is_risky")),
-                "severity": finding.get("severity"),
-                "confidence": finding.get("confidence"),
-                "cwe": finding.get("cwe") or [],
-                "verdict": finding.get("verdict"),
-                "evidence": finding.get("evidence") or [],
-            },
-            "nearest_user": {
-                "message_index": nearest.get("message_index"),
-                "text": nearest.get("text", ""),
-                "commands": nearest.get("commands", []),
-            },
-            "assistant_context": {
-                "message_index": message_index,
-                "block_index": block_index,
-                "block_type": ablock_type,
-                "block_text": ablock_text,
-                "candidate_text": candidate_text,
-            },
-            "lookback_users": user_hits,
-            "meta": {
-                "platform": chat.get("platform"),
-                "timestamp": chat.get("timestamp"),
-                "title": chat.get("title"),
-            },
-        }
-        outputs.append(out)
+            out = {
+                "finding_id": finding.get("finding_id"),
+                "candidate_id": candidate_id,
+                "chat_id": chat_id,
+                "chat_path": str(chat_path),
+                "candidate": {
+                    "message_index": message_index,
+                    "block_index": block_index,
+                    "candidate_index": candidate_index,
+                    "candidate_type": candidate_type,
+                },
+                "risk": {
+                    "is_risky": bool(finding.get("is_risky")),
+                    "severity": finding.get("severity"),
+                    "confidence": finding.get("confidence"),
+                    "cwe": finding.get("cwe") or [],
+                    "verdict": finding.get("verdict"),
+                    "evidence": finding.get("evidence") or [],
+                },
+                "nearest_user": {
+                    "message_index": nearest.get("message_index"),
+                    "text": nearest.get("text", ""),
+                    "commands": nearest.get("commands", []),
+                },
+                "assistant_context": {
+                    "message_index": message_index,
+                    "block_index": block_index,
+                    "block_type": ablock_type,
+                    "block_text": ablock_text,
+                    "candidate_text": candidate_text,
+                },
+                "lookback_users": user_hits,
+                "meta": {
+                    "platform": chat.get("platform"),
+                    "timestamp": chat.get("timestamp"),
+                    "title": chat.get("title"),
+                },
+            }
+            outputs.append(out)
 
     with args.out.open("wb") as f:
         for o in outputs:
