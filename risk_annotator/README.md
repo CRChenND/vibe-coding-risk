@@ -37,6 +37,8 @@ Keyboard shortcuts:
 - `3` = `unsure`
 - `4` = `unreviewed`
 
+The annotator also has a `CWE Groups` filter for browsing all rows with the same CWE, and the `CWE` field links to the official MITRE CWE page.
+
 ## Export
 
 Use the `Export JSON` or `Export CSV` buttons in the top bar.

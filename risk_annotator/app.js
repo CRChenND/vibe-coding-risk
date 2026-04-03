@@ -92,6 +92,7 @@ const state = {
   selectedFindingId: null,
   search: "",
   statusFilter: "all",
+  cweFilter: "all",
   pageSize: 25,
   page: 1,
   annotations: loadAnnotations(),
@@ -156,6 +157,29 @@ function truncate(text, limit = 120) {
   const compact = normalizeText(text);
   if (compact.length <= limit) return compact;
   return `${compact.slice(0, limit - 3)}...`;
+}
+
+function getCweGroupKey(cwe) {
+  return String(cwe || "").trim() || "Unknown";
+}
+
+function getCweNumber(cwe) {
+  const match = String(cwe || "").match(/^CWE-(\d+)$/i);
+  return match ? match[1] : "";
+}
+
+function getCweDocUrl(cwe) {
+  const number = getCweNumber(cwe);
+  return number ? `https://cwe.mitre.org/data/definitions/${number}.html` : "";
+}
+
+function renderCweLink(cwe, className = "") {
+  const value = String(cwe || "-");
+  const href = getCweDocUrl(value);
+  if (!href) {
+    return `<span class="${className}">${escapeHtml(value)}</span>`;
+  }
+  return `<a class="${className}" href="${escapeAttr(href)}" target="_blank" rel="noopener noreferrer">${escapeHtml(value)}</a>`;
 }
 
 function escapeRegex(value) {
@@ -438,12 +462,13 @@ function getFilteredRows() {
       const status = getAnnotation(row.finding_id).review_state;
       if (status !== state.statusFilter) return false;
     }
+    if (state.cweFilter !== "all" && getCweGroupKey(row.cwe) !== state.cweFilter) return false;
     return matchesSearch(row, q);
   });
 }
 
 function getCurrentRow() {
-  return state.filteredRows.find((row) => row.finding_id === state.selectedFindingId) || state.filteredRows[0] || state.rows[0] || null;
+  return state.filteredRows.find((row) => row.finding_id === state.selectedFindingId) || state.filteredRows[0] || null;
 }
 
 function setSelectedFindingId(findingId) {
@@ -454,6 +479,19 @@ function setSelectedFindingId(findingId) {
   }
   renderQueue();
   renderRecord();
+}
+
+function getCweGroups(rows = state.rows) {
+  const counts = new Map();
+  for (const row of rows) {
+    const key = getCweGroupKey(row.cwe);
+    counts.set(key, (counts.get(key) || 0) + 1);
+  }
+  return Array.from(counts.entries()).sort((a, b) => {
+    const countDiff = b[1] - a[1];
+    if (countDiff !== 0) return countDiff;
+    return a[0].localeCompare(b[0], undefined, { numeric: true, sensitivity: "base" });
+  });
 }
 
 async function loadChat(row) {
@@ -521,15 +559,30 @@ function renderQueue() {
   state.page = Math.min(Math.max(1, state.page), pageCount);
   const start = (state.page - 1) * state.pageSize;
   const pageRows = state.filteredRows.slice(start, start + state.pageSize);
-  if (!state.selectedFindingId || !state.filteredRows.some((row) => row.finding_id === state.selectedFindingId)) {
-    state.selectedFindingId = pageRows[0]?.finding_id || state.filteredRows[0]?.finding_id || state.rows[0]?.finding_id || null;
+  if (!state.filteredRows.length) {
+    state.selectedFindingId = null;
+  } else if (!state.selectedFindingId || !state.filteredRows.some((row) => row.finding_id === state.selectedFindingId)) {
+    state.selectedFindingId = pageRows[0]?.finding_id || state.filteredRows[0]?.finding_id || null;
   }
-  els.queueInfo.textContent = `${total} results`;
+  els.queueInfo.textContent = state.cweFilter === "all" ? `${total} results` : `${total} results · ${state.cweFilter}`;
   els.pageInfo.textContent = `Page ${state.page} of ${pageCount}`;
   els.pagePrev.disabled = state.page <= 1;
   els.pageNext.disabled = state.page >= pageCount;
   els.prevItem.disabled = !state.filteredRows.length;
   els.nextItem.disabled = !state.filteredRows.length;
+
+  const cweGroups = getCweGroups();
+  els.cweGroups.innerHTML = [
+    `<button type="button" class="group-chip ${state.cweFilter === "all" ? "selected" : ""}" data-cwe-filter="all">All CWEs <span class="count">${state.rows.length}</span></button>`,
+    ...cweGroups.map(
+      ([cwe, count]) => `
+        <button type="button" class="group-chip ${state.cweFilter === cwe ? "selected" : ""}" data-cwe-filter="${escapeAttr(cwe)}">
+          <span class="chip-label">${escapeHtml(cwe)}</span>
+          <span class="count">${count}</span>
+        </button>
+      `
+    ),
+  ].join("");
 
   els.queueList.innerHTML = pageRows
     .map((row) => {
@@ -583,10 +636,16 @@ function renderRecordFields(row) {
           <div class="v">
             ${
               k === "CWE"
-                ? `<button type="button" class="field-link" data-jump-target="risk-section" data-jump-index="${escapeHtml(row.index)}" data-jump-reason="cwe" title="${escapeHtml(v || "-")}">
-                    <strong>${escapeHtml(v || "-")}</strong>
-                    <span class="hint">Jump to risk block</span>
-                  </button>`
+                ? `<div class="cwe-actions">
+                    <a class="field-link cwe-doc-link" href="${escapeAttr(getCweDocUrl(v)) || "#"}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(v || "-")}">
+                      <strong>${escapeHtml(v || "-")}</strong>
+                      <span class="hint">Open MITRE CWE page</span>
+                    </a>
+                    <button type="button" class="field-link" data-jump-target="risk-section" data-jump-index="${escapeHtml(row.index)}" data-jump-reason="cwe" title="${escapeHtml(v || "-")}">
+                      Jump to risk block
+                      <span class="hint">Scroll to the matched assistant block</span>
+                    </button>
+                  </div>`
                 : k === "CWE Reason"
                   ? `<button type="button" class="field-link" data-jump-target="risk-section" data-jump-index="${escapeHtml(row.index)}" data-jump-reason="cwe_reason" title="${escapeHtml(v || "-")}">
                       ${escapeHtml(v || "-")}
@@ -780,6 +839,15 @@ function bindControls() {
     renderRecord();
   });
 
+  document.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-cwe-filter]");
+    if (!btn) return;
+    state.cweFilter = btn.dataset.cweFilter || "all";
+    state.page = 1;
+    renderQueue();
+    renderRecord();
+  });
+
   els.pageSize.addEventListener("change", (e) => {
     state.pageSize = Number(e.target.value) || 25;
     state.page = 1;
@@ -942,6 +1010,7 @@ async function init() {
   els.stats = document.querySelector("#stats");
   els.searchInput = document.querySelector("#search-input");
   els.statusFilter = document.querySelector("#status-filter");
+  els.cweGroups = document.querySelector("#cwe-groups");
   els.pageSize = document.querySelector("#page-size");
   els.jumpInput = document.querySelector("#jump-input");
   els.queueInfo = document.querySelector("#queue-info");
