@@ -79,6 +79,57 @@ This writes:
 - `analysis/output/code_risk_analysis/high_precision_code_risk_rows.csv`: code-risk rows after removing obvious false positives and local-only/context-dependent rows
 - `analysis/output/code_risk_analysis/attribution_summary.json`: summary counts including `audit.n_obvious_false_positives`, `audit.n_local_only_context_rows`, and `audit.n_high_precision_rows`
 
+### Risk Annotator Quick Start
+
+The repo includes a local review UI for the 1887-row risk dataset under `risk_annotator/`.
+
+Required files:
+
+- `analysis/output/risk_dataset_export_1887/manifest.json`
+- `analysis/output/risk_dataset_export_1887/risk_dataset.csv`
+- `analysis/output/risk_dataset_export_1887/source_files/*.json`
+
+If you need to rebuild the export:
+
+```bash
+uv run python analysis/scripts/export_risk_dataset.py
+```
+
+To launch the annotator, serve the repo root and open the app in a browser:
+
+```bash
+python3 -m http.server 8000
+```
+
+Then open:
+
+```text
+http://localhost:8000/risk_annotator/
+```
+
+How to use it:
+
+- `Queue`: browse records, search, and filter by annotation status
+- `Current Record`: review `CWE`, `CWE Reason`, and `Attribution`
+- `Original Chat`: inspect the full transcript with risky assistant code/command blocks highlighted
+- Click the `CWE` or `CWE Reason` field to jump to the matched risky code section
+- Click a risky assistant block to jump to the nearest user prompt; click that user prompt to jump back
+- Use `Export JSON` or `Export CSV` to download your annotations
+
+Annotation fields:
+
+- `review_state`: `unreviewed`, `approve`, `reject`, `unsure`
+- `cwe_correct`: `yes`, `no`, `unsure`
+- `reason_correct`: `yes`, `no`, `unsure`
+- `corrected_cwe`
+- `corrected_reason`
+- `notes`
+
+Notes:
+
+- Annotations are autosaved in browser `localStorage`
+- Keyboard shortcuts: `1` = `approve`, `2` = `reject`, `3` = `unsure`, `4` = `unreviewed`
+
 ### 1. Extract candidates
 
 Smoke test (20 chats):

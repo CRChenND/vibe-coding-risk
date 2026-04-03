@@ -21,7 +21,7 @@ python3 -m http.server 8000
 
 ## Annotation fields
 
-- `review_state`: `pass`, `needs_fix`, `reject`, `unsure`
+- `review_state`: `unreviewed`, `approve`, `reject`, `unsure`
 - `cwe_correct`: `yes`, `no`, `unsure`
 - `reason_correct`: `yes`, `no`, `unsure`
 - `corrected_cwe`
@@ -29,6 +29,13 @@ python3 -m http.server 8000
 - `notes`
 
 Annotations are autosaved in browser `localStorage`.
+
+Keyboard shortcuts:
+
+- `1` = `approve`
+- `2` = `reject`
+- `3` = `unsure`
+- `4` = `unreviewed`
 
 ## Export
 

@@ -12,6 +12,79 @@ const CAUSE_EXPLANATIONS = {
   insufficient_evidence: "The available context is too weak to confidently determine the source of the risk.",
   mixed_causality: "Multiple sources plausibly contributed, so the risk cannot be cleanly assigned to only one cause.",
 };
+const COMMAND_BLOCK_TYPES = new Set(["bash", "shell", "sh", "zsh", "terminal", "console", "command"]);
+const CODE_BLOCK_TYPES = new Set([
+  "diff",
+  "read-file",
+  "json",
+  "yaml",
+  "yml",
+  "xml",
+  "html",
+  "css",
+  "scss",
+  "sql",
+  "python",
+  "javascript",
+  "typescript",
+  "java",
+  "go",
+  "rust",
+  "ruby",
+  "php",
+  "c",
+  "cpp",
+  "csharp",
+  "cs",
+  "kotlin",
+  "swift",
+  "dart",
+  "tsx",
+  "jsx",
+  "js",
+  "ts",
+  "vue",
+  "svelte",
+  "toml",
+  "ini",
+  "dockerfile",
+]);
+const CODE_FILE_EXTENSIONS = [
+  ".py",
+  ".js",
+  ".jsx",
+  ".ts",
+  ".tsx",
+  ".java",
+  ".go",
+  ".rs",
+  ".rb",
+  ".php",
+  ".c",
+  ".cc",
+  ".cpp",
+  ".cs",
+  ".kt",
+  ".swift",
+  ".dart",
+  ".json",
+  ".yaml",
+  ".yml",
+  ".xml",
+  ".html",
+  ".css",
+  ".scss",
+  ".sql",
+  ".sh",
+  ".bash",
+  ".zsh",
+  ".toml",
+  ".ini",
+  ".vue",
+  ".svelte",
+  ".dockerfile",
+];
+const TEXT_FILE_EXTENSIONS = [".md", ".markdown", ".mdx", ".txt", ".rst"];
 
 const state = {
   rows: [],
@@ -115,13 +188,109 @@ function buildRiskFragments(row) {
   }).slice(0, 6);
 }
 
-function classifyBlockKind(type, role) {
+function classifyBlockKind(type, role, content = "") {
   const t = String(type || "").toLowerCase();
   const r = String(role || "").toLowerCase();
   if (r === "user") return "user";
-  if (t.includes("command")) return "command";
-  if (t.includes("code") || t.includes("markdown") || t.includes("snippet")) return "code";
+  if (COMMAND_BLOCK_TYPES.has(t) || t.includes("command")) return "command";
+  if (t === "markdown") return r === "assistant" ? inferAssistantTextKind(content) : "other";
+  if (t.startsWith("markdown:")) {
+    const target = t.slice("markdown:".length).trim();
+    if (TEXT_FILE_EXTENSIONS.some((ext) => target.endsWith(ext))) return "text";
+    if (CODE_FILE_EXTENSIONS.some((ext) => target.endsWith(ext))) return "code";
+    return inferAssistantTextKind(content);
+  }
+  if (t === "unknown") return r === "assistant" ? inferAssistantTextKind(content) : "other";
+  if (CODE_BLOCK_TYPES.has(t) || t.includes("code") || t.includes("snippet")) return "code";
   return r === "assistant" ? "text" : "other";
+}
+
+function inferAssistantTextKind(content) {
+  const text = String(content || "");
+  const compact = normalizeText(text);
+  if (!compact) return "text";
+
+  const lines = text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (!lines.length) return "text";
+
+  const commandLineCount = lines.filter((line) =>
+    /^(\$|#)\s/.test(line) ||
+    /^(git|npm|pnpm|yarn|npx|node|python|python3|pip|pip3|uv|pytest|cargo|go|java|javac|mvn|gradle|docker|kubectl|helm|brew|apt|apt-get|curl|wget|chmod|chown|mkdir|rm|cp|mv|ls|cd|cat|sed|awk|grep|find|ssh|scp)\b/.test(line)
+  ).length;
+  if (commandLineCount >= 2 || (commandLineCount >= 1 && lines.length <= 3 && !/[.!?]\s*$/.test(compact))) {
+    return "command";
+  }
+
+  const codeSignals = [
+    /^(import|from|export|const|let|var|function|class|interface|type|enum|def|async def|fn|pub fn|package|public class|SELECT|INSERT|UPDATE|DELETE|CREATE TABLE|<\w+)/m,
+    /[{};=][^\n]*$/m,
+    /^\s{2,}\S/m,
+    /^diff --git|^\+\+\+ |^--- |^@@/m,
+  ];
+  const codeScore = codeSignals.reduce((score, pattern) => score + (pattern.test(text) ? 1 : 0), 0);
+  if (codeScore >= 2 || (codeScore >= 1 && lines.length >= 3)) {
+    return "code";
+  }
+
+  return "text";
+}
+
+function isShellFenceLanguage(lang) {
+  const value = String(lang || "").trim().toLowerCase();
+  return ["bash", "sh", "shell", "zsh", "console", "terminal"].includes(value);
+}
+
+function splitAssistantTextSegments(content) {
+  const text = String(content || "");
+  if (!text.includes("```")) {
+    return [{ kind: "text", content: text }];
+  }
+
+  const parts = [];
+  const fenceRegex = /```([^\n`]*)\n?([\s\S]*?)```/g;
+  let lastIndex = 0;
+  let match;
+
+  while ((match = fenceRegex.exec(text))) {
+    const [fullMatch, lang, fencedContent] = match;
+    const leading = text.slice(lastIndex, match.index);
+    if (normalizeText(leading)) {
+      parts.push({ kind: "text", content: leading });
+    }
+    parts.push({
+      kind: isShellFenceLanguage(lang) ? "command" : "code",
+      content: fencedContent,
+    });
+    lastIndex = match.index + fullMatch.length;
+  }
+
+  const trailing = text.slice(lastIndex);
+  if (normalizeText(trailing)) {
+    parts.push({ kind: "text", content: trailing });
+  }
+
+  return parts.length ? parts : [{ kind: "text", content: text }];
+}
+
+function splitBlockSegments(blk, role) {
+  const type = String(blk?.type || "text");
+  const content = typeof blk?.content === "string" ? blk.content : JSON.stringify(blk?.content ?? "", null, 2);
+  const kind = classifyBlockKind(type, role, content);
+
+  if (role === "assistant" && kind === "text") {
+    return splitAssistantTextSegments(content)
+      .filter((segment) => normalizeText(segment.content))
+      .map((segment) => ({
+        ...segment,
+        kind: segment.kind === "text" ? inferAssistantTextKind(segment.content) : segment.kind,
+        type,
+      }));
+  }
+
+  return normalizeText(content) ? [{ kind, content, type }] : [];
 }
 
 function highlightHtmlText(text, fragments) {
@@ -420,7 +589,7 @@ function renderRecordFields(row) {
                   </button>`
                 : k === "CWE Reason"
                   ? `<button type="button" class="field-link" data-jump-target="risk-section" data-jump-index="${escapeHtml(row.index)}" data-jump-reason="cwe_reason" title="${escapeHtml(v || "-")}">
-                      ${escapeHtml(truncate(v || "-", 110))}
+                      ${escapeHtml(v || "-")}
                       <span class="hint">Jump to risk block</span>
                     </button>`
                   : k === "Attribution"
@@ -440,16 +609,22 @@ function renderRecordFields(row) {
 
 function renderTranscriptBlocks(blocks, messageIndex, row, fragments, role) {
   return flattenBlocks(blocks)
-    .filter((blk) => normalizeText(typeof blk?.content === "string" ? blk.content : JSON.stringify(blk?.content ?? "", null, 2)))
-    .map((blk, blockIndex) => {
-      const type = String(blk.type || "text");
-      const content = typeof blk.content === "string" ? blk.content : JSON.stringify(blk.content, null, 2);
+    .flatMap((blk, blockIndex) =>
+      splitBlockSegments(blk, role).map((segment, segmentIndex) => ({ blk, blockIndex, segment, segmentIndex }))
+    )
+    .map(({ blockIndex, segment, segmentIndex }) => {
+      const type = String(segment.type || "text");
+      const content = segment.content;
       const selected = Number(row.assistant_message_index) === messageIndex && Number(row.assistant_block_index) === blockIndex;
-      const hit = normalizeText(content) && fragments.some((fragment) => normalizeText(content).includes(fragment));
-      const kind = classifyBlockKind(type, role);
+      const normalizedContent = normalizeText(content);
+      const hitScore = normalizedContent
+        ? fragments.reduce((score, fragment) => score + (normalizedContent.includes(fragment) ? fragment.length : 0), 0)
+        : 0;
+      const hit = hitScore > 0;
+      const kind = segment.kind;
       const jumpTarget = role === "assistant" && (selected || hit) ? "nearest-user" : "";
       return `
-        <div class="block ${kind} ${selected ? "selected-block" : ""} ${hit ? "risk-block-hit" : ""}" id="block-${messageIndex}-${blockIndex}" data-message-index="${messageIndex}" data-block-index="${blockIndex}" ${jumpTarget ? `data-jump-target="${jumpTarget}"` : ""}>
+        <div class="block ${kind} ${selected ? "selected-block" : ""} ${hit ? "risk-block-hit" : ""}" id="block-${messageIndex}-${blockIndex}${segmentIndex ? `-seg-${segmentIndex}` : ""}" data-message-index="${messageIndex}" data-block-index="${blockIndex}" data-hit-score="${hitScore}" ${jumpTarget ? `data-jump-target="${jumpTarget}"` : ""}>
           <div class="block-head">
             <div class="type">${escapeHtml(kind === "user" ? "user prompt" : kind === "command" ? "assistant command" : kind === "code" ? "assistant code" : kind === "text" ? "assistant text" : type)}</div>
             ${selected || hit ? '<span class="pill active">Risk Block</span>' : ""}
@@ -503,7 +678,8 @@ function flashElement(el) {
 function jumpToRiskSection(row) {
   const messageIndex = Number(row.assistant_message_index);
   const blockIndex = Number(row.assistant_block_index);
-  const block = document.querySelector(`#block-${messageIndex}-${blockIndex}`);
+  const blockCandidates = Array.from(document.querySelectorAll(`[data-message-index="${messageIndex}"][data-block-index="${blockIndex}"]`));
+  const block = blockCandidates.sort((a, b) => Number(b.dataset.hitScore || 0) - Number(a.dataset.hitScore || 0))[0] || null;
   const message = document.querySelector(`#message-${messageIndex}`);
   const target = block || message;
   if (target) {
