@@ -20,6 +20,7 @@ This project analyzes assistant-generated code/replies in chat logs and maps ris
 - `analysis/scripts/extract_candidates.py`: Extracts analyzable assistant outputs from chats
 - `analysis/scripts/run_static_hybrid.py`: Runs static analysis (CodeQL first, Semgrep fallback)
 - `analysis/scripts/judge_openrouter.py`: Runs LLM-as-a-judge via OpenRouter
+- `analysis/scripts/build_cwe_catalog.py`: Downloads and caches the full MITRE CWE catalog locally
 - `analysis/scripts/backtrace_risky_user_context.py`: Backtraces risky findings to user+assistant context
 - `analysis/scripts/judge_attribution_openrouter.py`: Runs root-cause attribution judge on risky backtrace rows
 - `analysis/scripts/analyze_attribution_patterns.py`: Aggregates attribution + conversation tracing + CWE cross tables
@@ -27,6 +28,7 @@ This project analyzes assistant-generated code/replies in chat logs and maps ris
 - `analysis/schema/candidate_record.schema.json`: Schema for extracted candidates
 - `analysis/schema/risk_finding.schema.json`: Schema for findings
 - `analysis/prompts/judge_v1.md`: Prompt template for LLM judge
+- `analysis/prompts/cwe_verify_v1.md`: MITRE-backed verification prompt used when a draft CWE label is proposed
 - `analysis/prompts/attribution_judge_v1.md`: Prompt template for attribution judge
 - `analysis/tools/findsecbugs/findsecbugs-plugin.jar`: Recommended FindSecBugs plugin location
 
@@ -307,7 +309,13 @@ The summary file includes tool availability and fallback stats, for example:
 
 Default model:
 
-- `google/gemini-2.5-flash-lite`
+- `openai/gpt-5.4-mini`
+
+Before running verification, build the local MITRE catalog cache once:
+
+```bash
+python3 analysis/scripts/build_cwe_catalog.py --out analysis/output/cwe_catalog_full.json
+```
 
 Pilot run (500):
 
@@ -316,7 +324,6 @@ uv run python analysis/scripts/judge_openrouter.py \
   --candidates analysis/output/candidates_500.jsonl \
   --prompt analysis/prompts/judge_v1.md \
   --out analysis/output/judge_findings_500.jsonl \
-  --model google/gemini-2.5-flash-lite \
   --temperature 0.0
 ```
 
@@ -327,7 +334,6 @@ uv run python analysis/scripts/judge_openrouter.py \
   --candidates analysis/output/candidates_all.jsonl \
   --prompt analysis/prompts/judge_v1.md \
   --out analysis/output/judge_findings_all.jsonl \
-  --model google/gemini-2.5-flash-lite \
   --temperature 0.0
 ```
 
@@ -341,6 +347,8 @@ Output format follows `analysis/schema/risk_finding.schema.json`.
 Prompt note:
 
 - `analysis/prompts/judge_v1.md` explicitly asks the judge not to classify normal devops/git operations (for example `git reset --hard`, `git push --force`) as security vulnerabilities unless there is clear exploit/security impact.
+- `analysis/scripts/judge_openrouter.py` now performs a second pass against the full local MITRE CWE catalog whenever the draft judge marks a candidate as risky.
+- The verification pass searches the full local MITRE CWE catalog, not just a small built-in list of CWEs.
 
 ### 4. Backtrace risky findings to user and assistant context
 

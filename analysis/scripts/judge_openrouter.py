@@ -14,18 +14,29 @@ import orjson
 from dotenv import load_dotenv
 from tqdm import tqdm
 
+from cwe_reference import build_reference_pack, split_cwe_values
+
+
+DEFAULT_VERIFY_PROMPT = Path("analysis/prompts/cwe_verify_v1.md")
+DEFAULT_CATALOG_CACHE = Path("analysis/output/cwe_catalog_full.json")
+
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Run LLM-as-a-judge via OpenRouter.")
     p.add_argument("--candidates", type=Path, required=True)
     p.add_argument("--prompt", type=Path, default=Path("analysis/prompts/judge_v1.md"))
     p.add_argument("--out", type=Path, required=True)
-    p.add_argument("--model", type=str, default="google/gemini-2.5-flash-lite")
+    p.add_argument("--model", type=str, default="openai/gpt-5.4-mini")
     p.add_argument("--limit", type=int, default=0, help="0 means no limit")
     p.add_argument("--temperature", type=float, default=0.0)
     p.add_argument("--max-tokens", type=int, default=900)
     p.add_argument("--retries", type=int, default=3)
     p.add_argument("--sleep", type=float, default=0.0, help="sleep seconds between requests")
+    p.add_argument("--verify-prompt", type=Path, default=DEFAULT_VERIFY_PROMPT)
+    p.add_argument("--catalog-cache", "--mitre-cache", dest="catalog_cache", type=Path, default=DEFAULT_CATALOG_CACHE)
+    p.add_argument("--mitre-max-examples", type=int, default=2)
+    p.add_argument("--verify-cwe", dest="verify_cwe", action="store_true", default=True)
+    p.add_argument("--no-verify-cwe", dest="verify_cwe", action="store_false")
     p.add_argument("--resume", dest="resume", action="store_true", default=True, help="Resume from existing output.")
     p.add_argument("--no-resume", dest="resume", action="store_false", help="Do not resume; overwrite output.")
     return p.parse_args()
@@ -123,10 +134,7 @@ def normalize_finding(candidate_id: str, parsed: dict[str, Any], model: str) -> 
         confidence = 0.0
     confidence = max(0.0, min(1.0, confidence))
 
-    cwe = parsed.get("cwe", [])
-    if not isinstance(cwe, list):
-        cwe = []
-    cwe = [str(x) for x in cwe if isinstance(x, str) and x.startswith("CWE-")]
+    cwe = split_cwe_values(parsed.get("cwe", []))
 
     evidence = parsed.get("evidence", [])
     if not isinstance(evidence, list):
@@ -163,6 +171,54 @@ def normalize_finding(candidate_id: str, parsed: dict[str, Any], model: str) -> 
             "reasoning": reasoning,
         },
     }
+
+
+def summarize_finding(finding: dict[str, Any]) -> dict[str, Any]:
+    details = finding.get("details") or {}
+    return {
+        "finding_id": finding.get("finding_id"),
+        "candidate_id": finding.get("candidate_id"),
+        "analyzer": finding.get("analyzer"),
+        "is_risky": finding.get("is_risky"),
+        "severity": finding.get("severity"),
+        "confidence": finding.get("confidence"),
+        "cwe": finding.get("cwe", []),
+        "verdict": finding.get("verdict"),
+        "reasoning": details.get("reasoning", ""),
+    }
+
+
+def candidate_query_text(candidate: dict[str, Any]) -> str:
+    parts: list[str] = []
+    for key in ("content", "candidate_type", "language_hint"):
+        value = candidate.get(key)
+        if isinstance(value, str) and value.strip():
+            parts.append(value)
+    metadata = candidate.get("metadata")
+    if isinstance(metadata, dict):
+        for key in ("preceding_user_text", "block_type"):
+            value = metadata.get(key)
+            if isinstance(value, str) and value.strip():
+                parts.append(value)
+    repo_context = candidate.get("repo_context")
+    if isinstance(repo_context, dict):
+        value = repo_context.get("search_match_path")
+        if isinstance(value, str) and value.strip():
+            parts.append(value)
+    return "\n".join(parts)
+
+
+def build_verification_prompt(
+    template: str,
+    candidate_json: str,
+    draft_finding: dict[str, Any],
+    cwe_reference_pack: dict[str, dict[str, Any]],
+) -> str:
+    return (
+        template.replace("{{candidate_record_json}}", candidate_json)
+        .replace("{{draft_finding_json}}", json.dumps(summarize_finding(draft_finding), ensure_ascii=False, indent=2))
+        .replace("{{mitre_reference_pack_json}}", json.dumps(cwe_reference_pack, ensure_ascii=False, indent=2))
+    )
 
 
 def call_openrouter(
@@ -227,6 +283,7 @@ def main() -> None:
 
     base_url = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
     template = args.prompt.read_text(encoding="utf-8")
+    verify_template = args.verify_prompt.read_text(encoding="utf-8") if args.verify_cwe else ""
 
     raw_lines = args.candidates.read_bytes().splitlines()
     if args.limit and args.limit > 0:
@@ -252,6 +309,7 @@ def main() -> None:
                     count_skip += 1
                     continue
                 candidate_json = orjson.dumps(candidate, option=orjson.OPT_INDENT_2).decode("utf-8")
+                query_text = candidate_query_text(candidate)
                 prompt_text = template.replace("{{candidate_record_json}}", candidate_json)
 
                 last_err: Exception | None = None
@@ -266,7 +324,49 @@ def main() -> None:
                             max_tokens=args.max_tokens,
                         )
                         parsed = parse_judge_json(text)
-                        finding = normalize_finding(candidate_id, parsed, args.model)
+                        draft_finding = normalize_finding(candidate_id, parsed, args.model)
+
+                        verification_payload: dict[str, Any] | None = None
+                        final_parsed = parsed
+                        if args.verify_cwe and draft_finding["verdict"] != "not_risky":
+                            reference_pack = build_reference_pack(
+                                draft_finding["cwe"],
+                                catalog_cache_path=args.catalog_cache,
+                                max_examples=max(1, args.mitre_max_examples),
+                                query_text=query_text + "\n" + str(draft_finding.get("details", {}).get("reasoning", "")),
+                                top_k=8,
+                            )
+                            verify_prompt = build_verification_prompt(
+                                verify_template,
+                                candidate_json,
+                                draft_finding,
+                                reference_pack,
+                            )
+                            verify_text = call_openrouter(
+                                client=client,
+                                api_key=api_key,
+                                model=args.model,
+                                prompt_text=verify_prompt,
+                                temperature=args.temperature,
+                                max_tokens=args.max_tokens,
+                            )
+                            verified = parse_judge_json(verify_text)
+                            final_parsed = verified
+                            verification_payload = {
+                                "mode": "mitre_cwe_verify",
+                                "draft": summarize_finding(draft_finding),
+                                "reference_pack": reference_pack,
+                                "verify_prompt": str(args.verify_prompt),
+                            }
+                            if split_cwe_values(verified.get("cwe", [])) != draft_finding["cwe"]:
+                                verification_payload["revised"] = True
+                            else:
+                                verification_payload["revised"] = False
+
+                        finding = normalize_finding(candidate_id, final_parsed, args.model)
+                        if verification_payload is not None:
+                            finding["details"]["verification"] = verification_payload
+                            finding["details"]["draft"] = summarize_finding(draft_finding)
                         wf.write(orjson.dumps(finding) + b"\n")
                         count_ok += 1
                         done_ids.add(candidate_id)
