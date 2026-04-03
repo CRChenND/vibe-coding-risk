@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Risk Dataset Annotator</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Manual Review</p>
+          <h1>Risk Dataset Annotator</h1>
+          <p class="subtitle">
+            Review the 1887-item risk dataset, inspect the original chat transcript, and record annotations with automatic local saving.
+          </p>
+        </div>
+        <div class="topbar-actions">
+          <button id="export-json" type="button">Export JSON</button>
+          <button id="export-csv" type="button">Export CSV</button>
+          <button id="clear-storage" type="button" class="ghost">Clear Saved Annotations</button>
+        </div>
+      </header>
+
+      <section class="stats" id="stats"></section>
+
+      <main class="layout three-col">
+        <aside class="sidebar card compact-sidebar">
+          <div class="panel-head">
+            <h2>Queue</h2>
+            <div class="pager">
+              <button id="prev-item" type="button">Prev</button>
+              <button id="next-item" type="button">Next</button>
+            </div>
+          </div>
+
+          <label class="field">
+            <span>Search</span>
+            <input id="search-input" type="search" placeholder="Index, CWE, snippet, finding id..." />
+          </label>
+
+          <div class="filter-row">
+            <label class="field">
+              <span>Status</span>
+              <select id="status-filter"></select>
+            </label>
+            <label class="field">
+              <span>Per Page</span>
+              <select id="page-size">
+                <option value="20">20</option>
+                <option value="25" selected>25</option>
+                <option value="50">50</option>
+              </select>
+            </label>
+          </div>
+
+          <label class="field">
+            <span>Jump to Index</span>
+            <input id="jump-input" type="number" min="1" step="1" placeholder="1-1887" />
+          </label>
+
+          <div class="list-head">
+            <span id="queue-info">0 results</span>
+            <span id="page-info">Page 1</span>
+          </div>
+
+          <div id="queue-list" class="queue-list"></div>
+          <div class="page-controls">
+            <button id="page-prev" type="button">Page Prev</button>
+            <button id="page-next" type="button">Page Next</button>
+          </div>
+        </aside>
+
+        <section class="content card record-panel">
+          <div class="record-header">
+            <div>
+              <p class="eyebrow">Current Record</p>
+              <h2 id="record-title">Loading...</h2>
+              <p id="record-meta" class="record-meta"></p>
+            </div>
+            <div id="record-badges" class="badges"></div>
+          </div>
+
+          <div class="subcard review-card">
+            <div class="field-summary" id="record-fields"></div>
+            <div class="annot-block">
+              <span class="label">Review State</span>
+              <div class="button-group" data-group="review_state"></div>
+            </div>
+            <div class="annot-block">
+              <span class="label">CWE Correct?</span>
+              <div class="button-group" data-group="cwe_correct"></div>
+            </div>
+            <div class="annot-block">
+              <span class="label">Reason Correct?</span>
+              <div class="button-group" data-group="reason_correct"></div>
+            </div>
+            <label class="field">
+              <span>Corrected CWE</span>
+              <input id="corrected-cwe" type="text" placeholder="e.g. CWE-79" />
+            </label>
+            <label class="field">
+              <span>Corrected Reason</span>
+              <textarea id="corrected-reason" rows="3" placeholder="Optional edited reason..."></textarea>
+            </label>
+            <label class="field">
+              <span>Notes</span>
+              <textarea id="notes" rows="4" placeholder="Any review note..."></textarea>
+            </label>
+            <div class="annot-actions">
+              <button id="save-now" type="button">Save Now</button>
+              <button id="reset-item" type="button" class="ghost">Reset Item</button>
+            </div>
+            <p id="save-state" class="save-state">Autosave enabled.</p>
+          </div>
+        </section>
+
+        <section class="content card transcript-panel">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">Transcript</p>
+              <h2>Original Chat</h2>
+            </div>
+            <div class="pager">
+              <button id="toggle-raw" type="button" class="ghost">Toggle Raw JSON</button>
+            </div>
+          </div>
+          <div id="transcript" class="transcript"></div>
+          <pre id="raw-json" class="raw-json hidden"></pre>
+        </section>
+      </main>
+    </div>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
