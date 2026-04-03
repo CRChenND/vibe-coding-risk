@@ -159,8 +159,24 @@ function truncate(text, limit = 120) {
   return `${compact.slice(0, limit - 3)}...`;
 }
 
-function getCweGroupKey(cwe) {
-  return String(cwe || "").trim() || "Unknown";
+function getCweGroupKeys(cwe) {
+  const list = getCweList(cwe);
+  return list.length ? list : ["Unknown"];
+}
+
+function getCweList(cwe) {
+  const values = Array.isArray(cwe) ? cwe : String(cwe || "").split(/[,\n;|/]+/);
+  const out = [];
+  const seen = new Set();
+  for (const value of values) {
+    const match = String(value || "").trim().match(/^CWE-(\d+)$/i);
+    if (!match) continue;
+    const normalized = `CWE-${match[1]}`;
+    if (seen.has(normalized)) continue;
+    seen.add(normalized);
+    out.push(normalized);
+  }
+  return out;
 }
 
 function getCweNumber(cwe) {
@@ -173,13 +189,9 @@ function getCweDocUrl(cwe) {
   return number ? `https://cwe.mitre.org/data/definitions/${number}.html` : "";
 }
 
-function renderCweLink(cwe, className = "") {
-  const value = String(cwe || "-");
-  const href = getCweDocUrl(value);
-  if (!href) {
-    return `<span class="${className}">${escapeHtml(value)}</span>`;
-  }
-  return `<a class="${className}" href="${escapeAttr(href)}" target="_blank" rel="noopener noreferrer">${escapeHtml(value)}</a>`;
+function formatCweList(cwe) {
+  const list = getCweList(cwe);
+  return list.length ? list.join(", ") : String(cwe || "Unknown");
 }
 
 function escapeRegex(value) {
@@ -462,7 +474,7 @@ function getFilteredRows() {
       const status = getAnnotation(row.finding_id).review_state;
       if (status !== state.statusFilter) return false;
     }
-    if (state.cweFilter !== "all" && getCweGroupKey(row.cwe) !== state.cweFilter) return false;
+    if (state.cweFilter !== "all" && !getCweGroupKeys(row.cwe).includes(state.cweFilter)) return false;
     return matchesSearch(row, q);
   });
 }
@@ -484,8 +496,14 @@ function setSelectedFindingId(findingId) {
 function getCweGroups(rows = state.rows) {
   const counts = new Map();
   for (const row of rows) {
-    const key = getCweGroupKey(row.cwe);
-    counts.set(key, (counts.get(key) || 0) + 1);
+    const list = getCweGroupKeys(row.cwe);
+    if (list[0] === "Unknown") {
+      counts.set("Unknown", (counts.get("Unknown") || 0) + 1);
+      continue;
+    }
+    for (const key of list) {
+      counts.set(key, (counts.get(key) || 0) + 1);
+    }
   }
   return Array.from(counts.entries()).sort((a, b) => {
     const countDiff = b[1] - a[1];
@@ -572,14 +590,11 @@ function renderQueue() {
   els.nextItem.disabled = !state.filteredRows.length;
 
   const cweGroups = getCweGroups();
-  els.cweGroups.innerHTML = [
-    `<button type="button" class="group-chip ${state.cweFilter === "all" ? "selected" : ""}" data-cwe-filter="all">All CWEs <span class="count">${state.rows.length}</span></button>`,
+  els.cweFilter.innerHTML = [
+    `<option value="all" ${state.cweFilter === "all" ? "selected" : ""}>All CWEs (${state.rows.length})</option>`,
     ...cweGroups.map(
       ([cwe, count]) => `
-        <button type="button" class="group-chip ${state.cweFilter === cwe ? "selected" : ""}" data-cwe-filter="${escapeAttr(cwe)}">
-          <span class="chip-label">${escapeHtml(cwe)}</span>
-          <span class="count">${count}</span>
-        </button>
+        <option value="${escapeAttr(cwe)}" ${state.cweFilter === cwe ? "selected" : ""}>${escapeHtml(cwe)} (${count})</option>
       `
     ),
   ].join("");
@@ -592,7 +607,7 @@ function renderQueue() {
         <button class="queue-item ${active}" data-finding-id="${escapeHtml(row.finding_id)}" type="button">
           <div class="row-top">
             <strong>#${row.index}</strong>
-            <span class="mono queue-cwe">${escapeHtml(row.cwe)}</span>
+            <span class="mono queue-cwe">${escapeHtml(formatCweList(row.cwe))}</span>
             ${statusPill(ann.review_state)}
           </div>
           <div class="snippet">${escapeHtml(truncate(row.risk_snippets_content || row.assistant_candidate_text_short || "", 96))}</div>
@@ -637,20 +652,22 @@ function renderRecordFields(row) {
             ${
               k === "CWE"
                 ? `<div class="cwe-actions">
-                    <a class="field-link cwe-doc-link" href="${escapeAttr(getCweDocUrl(v)) || "#"}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(v || "-")}">
-                      <strong>${escapeHtml(v || "-")}</strong>
-                      <span class="hint">Open MITRE CWE page</span>
-                    </a>
+                    <div class="cwe-tags">
+                      ${getCweList(v)
+                        .map(
+                          (cwe) => `
+                            <a class="cwe-tag" href="${escapeAttr(getCweDocUrl(cwe))}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(cwe)}">${escapeHtml(cwe)}</a>
+                          `
+                        )
+                        .join("") || `<span class="plain-value">${escapeHtml(String(v || "Unknown"))}</span>`}
+                    </div>
                     <button type="button" class="field-link" data-jump-target="risk-section" data-jump-index="${escapeHtml(row.index)}" data-jump-reason="cwe" title="${escapeHtml(v || "-")}">
                       Jump to risk block
                       <span class="hint">Scroll to the matched assistant block</span>
                     </button>
                   </div>`
                 : k === "CWE Reason"
-                  ? `<button type="button" class="field-link" data-jump-target="risk-section" data-jump-index="${escapeHtml(row.index)}" data-jump-reason="cwe_reason" title="${escapeHtml(v || "-")}">
-                      ${escapeHtml(v || "-")}
-                      <span class="hint">Jump to risk block</span>
-                    </button>`
+                  ? `<div class="plain-value">${escapeHtml(v || "-")}</div>`
                   : k === "Attribution"
                     ? `<div class="plain-value">
                         <span class="has-tip" data-tip="${escapeAttr(CAUSE_EXPLANATIONS[v] || "The attribution label explains where the risky direction most likely came from.")}">
@@ -771,7 +788,7 @@ async function renderRecord() {
 
   const ann = getAnnotation(row.finding_id);
   els.recordTitle.textContent = `#${row.index}`;
-  els.recordMeta.textContent = `${row.cwe} · ${row.attribution_domain}`;
+  els.recordMeta.textContent = `${formatCweList(row.cwe)} · ${row.attribution_domain}`;
   els.recordBadges.innerHTML = [
     statusPill(ann.review_state),
     `<span class="pill">${escapeHtml(ann.cwe_correct)}</span>`,
@@ -839,10 +856,8 @@ function bindControls() {
     renderRecord();
   });
 
-  document.addEventListener("click", (e) => {
-    const btn = e.target.closest("[data-cwe-filter]");
-    if (!btn) return;
-    state.cweFilter = btn.dataset.cweFilter || "all";
+  els.cweFilter.addEventListener("change", (e) => {
+    state.cweFilter = e.target.value || "all";
     state.page = 1;
     renderQueue();
     renderRecord();
@@ -1010,7 +1025,7 @@ async function init() {
   els.stats = document.querySelector("#stats");
   els.searchInput = document.querySelector("#search-input");
   els.statusFilter = document.querySelector("#status-filter");
-  els.cweGroups = document.querySelector("#cwe-groups");
+  els.cweFilter = document.querySelector("#cwe-filter");
   els.pageSize = document.querySelector("#page-size");
   els.jumpInput = document.querySelector("#jump-input");
   els.queueInfo = document.querySelector("#queue-info");

@@ -110,11 +110,11 @@ http://localhost:8000/risk_annotator/
 How to use it:
 
 - `Queue`: browse records, search, and filter by annotation status
-- `CWE Groups`: filter the queue to a single CWE and inspect all rows in that group together
+- `CWE Groups`: use the dropdown to filter the queue to a single CWE and inspect all rows in that group together
 - `Current Record`: review `CWE`, `CWE Reason`, and `Attribution`
 - `Original Chat`: inspect the full transcript with risky assistant code/command blocks highlighted
-- Click the `CWE` or `CWE Reason` field to jump to the matched risky code section
 - Click the `CWE` value in `Current Record` to open the official MITRE CWE documentation page
+- If a row has multiple CWEs, it will be counted in each matching CWE group and each CWE will be shown separately in the record panel
 - Click a risky assistant block to jump to the nearest user prompt; click that user prompt to jump back
 - Use `Export JSON` or `Export CSV` to download your annotations
 

@@ -38,6 +38,7 @@ Keyboard shortcuts:
 - `4` = `unreviewed`
 
 The annotator also has a `CWE Groups` filter for browsing all rows with the same CWE, and the `CWE` field links to the official MITRE CWE page.
+Rows with multiple CWEs are counted in each matching group, and the record panel shows each CWE as its own link.
 
 ## Export
 
