@@ -1,4 +1,5 @@
 const DATA_URL = "./data/site_data.json";
+const CWE_CATALOG_URL = "../analysis/output/cwe_catalog_full.json";
 
 const COLORS = {
   accent: "#b74419",
@@ -11,6 +12,7 @@ const COLORS = {
 
 const state = {
   data: null,
+  cweCatalog: null,
   filteredFindings: [],
   activePreset: "all",
   tablePage: 1,
@@ -108,8 +110,49 @@ function splitCwes(value) {
     .map((item) => item.split(":")[0].trim());
 }
 
-function cweExplanation(cwe) {
+function cweFallbackDescription(cwe) {
   return CWE_EXPLANATIONS[cwe] || "Concrete software security weakness used in the analysis.";
+}
+
+function buildCweCatalogIndex(catalog) {
+  const index = new Map();
+  const entries = Array.isArray(catalog?.entries) ? catalog.entries : [];
+  entries.forEach((entry) => {
+    const cwe = String(entry?.cwe || "").trim();
+    if (!cwe) return;
+    index.set(cwe, {
+      cwe,
+      title: String(entry?.title || entry?.name || cwe).trim(),
+      name: String(entry?.name || "").trim(),
+      description: String(entry?.description || "").trim(),
+      extendedDescription: String(entry?.extended_description || "").trim(),
+      url: String(entry?.url || "").trim(),
+    });
+  });
+  return index;
+}
+
+function cweMeta(cwe) {
+  const key = String(cwe || "").trim();
+  return state.cweCatalog?.get(key) || null;
+}
+
+function cweTooltip(cwe) {
+  const meta = cweMeta(cwe);
+  if (meta) {
+    return meta.title || meta.name || cwe;
+  }
+  return `${cwe}: ${cweFallbackDescription(cwe)}`;
+}
+
+function cweDetailText(cwe) {
+  const meta = cweMeta(cwe);
+  if (meta) {
+    const title = meta.title || meta.name || cwe;
+    const description = meta.description || meta.extendedDescription || "";
+    return description ? `${title}. ${description}` : title;
+  }
+  return `${cwe}: ${cweFallbackDescription(cwe)}`;
 }
 
 function formatCweList(value) {
@@ -120,7 +163,7 @@ function renderCweTags(value) {
   return formatCweList(value)
     .map(
       (cwe) =>
-        `<span class="pill mono cwe-pill has-tip" data-tip="${escapeAttr(cweExplanation(cwe))}">${escapeHtml(cwe)}</span>`
+        `<span class="pill mono cwe-pill has-tip" data-tip="${escapeAttr(cweTooltip(cwe))}">${escapeHtml(cwe)}</span>`
     )
     .join("");
 }
@@ -251,7 +294,7 @@ function renderTrajectoryTimeline(row) {
 
 function explainFinding(row) {
   const cwePart = formatCweList(row.cwe)
-    .map((cwe) => cweExplanation(cwe))
+    .map((cwe) => cweDetailText(cwe))
     .join(" ");
   const causePart =
     CAUSE_EXPLANATIONS[row.primary_cause] || "The attribution label explains where the risky direction most likely came from.";
@@ -289,7 +332,7 @@ function extractRiskSignals(text) {
 function renderHeroMetrics(overview) {
   const mount = document.querySelector("#hero-metrics");
   const items = [
-    ["High-Precision Rows", fmtInt(overview.n_code_risk_rows)],
+    ["Risk Rows", fmtInt(overview.n_code_risk_rows)],
     ["Assistant-First", fmtPct(overview.assistant_first_ratio)],
     ["Early Emergence", fmtPct(overview.early_emergence_ratio)],
     ["Risk Gap p90", String(overview.risk_gap_p90)],
@@ -299,12 +342,12 @@ function renderHeroMetrics(overview) {
   mount.innerHTML = "";
   items.forEach(([label, value]) => {
     const tooltipMap = {
-      "High-Precision Rows": "Rows retained after filtering to the paper-facing high-precision subset: advice-only rows removed, obvious false positives removed, and local-only/context-dependent rows separated out.",
+      "Risk Rows": "Rows shown in the explorer after widening the dataset to include all risky findings, including security-advice rows that may still affect users.",
       "Assistant-First": "Share of findings where the risky direction is attributed mainly to the assistant rather than user/context.",
       "Early Emergence": "Share of traced findings whose first concrete risk signal appears in turns 0-1.",
       "Risk Gap p90": "90th percentile of the number of turns between first concrete risk signal and final risky assistant output.",
       "Assistant Regression": "Share of assistant-driven trajectories that continue from an earlier risk signal into a later, concretized risky output.",
-      [`Top CWE: ${overview.top_cwe_label}`]: "The single most common weakness family in the high-precision code-risk dataset.",
+      [`Top CWE: ${overview.top_cwe_label}`]: "The single most common weakness family in the risky-row dataset.",
     };
     const card = document.createElement("div");
     card.className = "metric-card";
@@ -363,7 +406,7 @@ function renderBarChart(mountSelector, rows, getLabel, getValue, color, onBarCli
     const value = getValue(row);
     const rawLabel = getLabel(row);
     const labelHtml = String(rawLabel).startsWith("CWE-")
-      ? `<span class="has-tip" data-tip="${escapeAttr(cweExplanation(String(rawLabel)))}">${escapeHtml(String(rawLabel))}</span>`
+      ? `<span class="has-tip" data-tip="${escapeAttr(cweTooltip(String(rawLabel)))}">${escapeHtml(String(rawLabel))}</span>`
       : escapeHtml(String(rawLabel));
     const wrapper = document.createElement("div");
     wrapper.className = "bar-row";
@@ -396,7 +439,7 @@ function renderSourceByCwe(rows) {
           .map(
             (row) => `
               <div class="grouped-row">
-                <div class="grouped-label mono"><span class="has-tip" data-tip="${escapeAttr(cweExplanation(String(row.cwe)))}">${escapeHtml(String(row.cwe))}</span></div>
+                <div class="grouped-label mono"><span class="has-tip" data-tip="${escapeAttr(cweTooltip(String(row.cwe)))}">${escapeHtml(String(row.cwe))}</span></div>
                 <div class="grouped-bars">
                   <div class="grouped-bar-item chart-clickable" data-cwe="${escapeAttr(String(row.cwe))}" data-side="${escapeAttr(dominantKey)}">
                     <div class="grouped-bar-head">
@@ -516,7 +559,11 @@ function openExamplesDrawerForSource(cwe, side) {
     return false;
   });
   const sideLabel = side === "assistant_driven_ratio" ? "assistant-driven" : "user/context-driven";
-  openExamplesDrawer(`${cwe} · ${sideLabel}`, `Representative findings that contribute to the ${sideLabel} bar for ${cwe}.`, findings);
+  openExamplesDrawer(
+    `${cweTooltip(cwe)} · ${sideLabel}`,
+    `Representative findings that contribute to the ${sideLabel} bar for ${cweTooltip(cwe)}.`,
+    findings
+  );
 }
 
 function openExamplesDrawerForAttribution(cause) {
@@ -531,7 +578,7 @@ function openExamplesDrawerForAttribution(cause) {
 
 function openExamplesDrawerForCwe(cwe) {
   const findings = state.data.findings.filter((row) => formatCweList(row.cwe).includes(cwe));
-  openExamplesDrawer(cwe, `Representative findings categorized under ${cwe}.`, findings);
+  openExamplesDrawer(cweTooltip(cwe), `Representative findings categorized under ${cweTooltip(cwe)}.`, findings);
 }
 
 function openExamplesDrawerForEmergence(bucket) {
@@ -551,15 +598,17 @@ function summarizeCard(row) {
   const snippet = row.assistant_candidate_preview || row.assistant_candidate_text_short || "No risky code or command snippet available.";
   const context = row.nearest_user_preview || row.nearest_user_text_short || "No nearby user context available.";
   const signal = extractRiskSignals(snippet)[0];
-  const cweSummary = cweList.map((cwe) => CWE_EXPLANATIONS[cwe] || "Concrete software security weakness.").join(" ");
+  const primaryCwe = cweList[0] || "";
+  const primaryCweName = cweMeta(primaryCwe)?.name || cweMeta(primaryCwe)?.title || primaryCwe;
+  const cweSummary = cweList.map((cwe) => cweDetailText(cwe)).join(" ");
   const why =
     signal?.label
       ? `${signal.label}. ${cweSummary}`
       : cweSummary;
   const title = signal?.label
-    ? `${signal.label} in ${cweList[0] || "risk finding"}`
-    : cweList[0]
-      ? `${cweList[0]} finding`
+    ? `${signal.label} in ${primaryCweName || "risk finding"}`
+    : primaryCweName
+      ? `${primaryCweName} finding`
       : "Risk finding";
   return {
     title,
@@ -898,7 +947,7 @@ function openDrawer(row) {
       </div>
       <p><strong>CWE:</strong></p>
       <div class="cwe-tag-list detail-cwe-list">${renderCweTags(row.cwe)}</div>
-      <p>${cweList.map((cwe) => cweExplanation(cwe)).join(" ")}</p>
+      <p>${cweList.map((cwe) => cweDetailText(cwe)).join(" ")}</p>
       <p><strong>Attribution Distribution:</strong> ${escapeHtml(attributionLabel)}</p>
       <p><strong>Attribution Family:</strong> ${escapeHtml(attributionFamily)}</p>
       <p><strong>Verdict:</strong> ${row.verdict} (${row.confidence ?? "n/a"})</p>
@@ -953,7 +1002,7 @@ function bindEvents() {
 
 function render(data) {
   document.querySelector("#hero-subtitle").textContent =
-    `${data.meta.subtitle}. High-precision rows: ${fmtInt(data.overview.n_code_risk_rows)} from a total corpus of ${fmtInt(data.overview.n_total_candidates)} extracted candidates.`;
+    `${data.meta.subtitle}. Risk rows: ${fmtInt(data.overview.n_code_risk_rows)} from a total corpus of ${fmtInt(data.overview.n_total_candidates)} extracted candidates.`;
   renderHeroMetrics(data.overview);
   renderInsights(data.insights);
 
@@ -991,11 +1040,18 @@ function render(data) {
 
 async function init() {
   bindEvents();
-  const response = await fetch(DATA_URL);
-  if (!response.ok) {
+  const [dataResponse, catalogResponse] = await Promise.all([fetch(DATA_URL), fetch(CWE_CATALOG_URL)]);
+  if (!dataResponse.ok) {
     throw new Error(`Failed to load ${DATA_URL}`);
   }
-  state.data = await response.json();
+  state.data = await dataResponse.json();
+  if (catalogResponse.ok) {
+    const catalog = await catalogResponse.json();
+    state.cweCatalog = buildCweCatalogIndex(catalog);
+  } else {
+    state.cweCatalog = new Map();
+    console.warn(`Failed to load ${CWE_CATALOG_URL}; falling back to local CWE descriptions.`);
+  }
   render(state.data);
 }
 

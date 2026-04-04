@@ -1,5 +1,5 @@
-const MANIFEST_URL = "../analysis/output/risk_dataset_export_1887/manifest.json";
-const SOURCE_BASE = "../analysis/output/risk_dataset_export_1887/";
+const MANIFEST_URL = "../analysis/output/risk_dataset_export_350/manifest.json";
+const SOURCE_BASE = "../analysis/output/risk_dataset_export_350/";
 const STORAGE_KEY = "vibe-risk-annotations-v1";
 const PAGE_SIZES = [20, 25, 50];
 const REVIEW_STATES = ["unreviewed", "approve", "reject", "unsure"];

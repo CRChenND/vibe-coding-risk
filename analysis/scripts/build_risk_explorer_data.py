@@ -8,14 +8,13 @@ import statistics
 from collections import Counter, defaultdict
 from pathlib import Path
 
+from risk_dedup import dedup_risky_rows, load_candidate_repo_paths
+
 
 ROOT = Path(__file__).resolve().parents[2]
-OUT_BASE = ROOT / "analysis/output/code_risk_analysis"
 RISKY_BACKTRACE = ROOT / "analysis/output/risky_backtrace_all.csv"
 RISKY_BACKTRACE_JSONL = ROOT / "analysis/output/risky_backtrace_all.jsonl"
 OUTPUT_PATH = ROOT / "risk_explorer/data/site_data.json"
-HIGH_PRECISION_ROWS = OUT_BASE / "high_precision_code_risk_rows.csv"
-AUDIT_ROWS = OUT_BASE / "code_risk_audit.csv"
 ATTR_ENRICHED = ROOT / "analysis/output/attribution_analysis_all/attribution_enriched.csv"
 CONV_TRACING = ROOT / "analysis/output/attribution_analysis_all/conversation_tracing.csv"
 CANDIDATES_ALL = ROOT / "analysis/output/candidates_all.jsonl"
@@ -172,43 +171,59 @@ def focused_preview(text: str | None, limit: int = 700) -> str:
     return snippet
 
 
+def split_cwe_values(value: str | None) -> list[str]:
+    if not value:
+        return []
+    parts = re.split(r"[|,]", value)
+    return [part.strip() for part in parts if part.strip()]
+
+
 def enrich_attr_rows_with_final_cwe(
     attr_rows: list[dict[str, str]], cwe_by_fid: dict[str, str], keep: set[str]
 ) -> list[dict[str, str]]:
-    enriched: list[dict[str, str]] = []
+    best_by_fid: dict[str, dict[str, str]] = {}
     for row in attr_rows:
         fid = row["finding_id"]
         if fid not in keep:
             continue
         new_row = dict(row)
         new_row["cwe"] = cwe_by_fid[fid]
-        enriched.append(new_row)
-    return enriched
+        existing = best_by_fid.get(fid)
+        if existing is None or attribution_row_rank(new_row) > attribution_row_rank(existing):
+            best_by_fid[fid] = new_row
+    return list(best_by_fid.values())
+
+
+def attribution_row_rank(row: dict[str, str]) -> tuple[int, float, int]:
+    needs_review = str(row.get("needs_human_review") or "").strip().lower() == "true"
+    confidence = to_float(row.get("attribution_confidence")) or 0.0
+    has_specific_cause = int(str(row.get("primary_cause") or "").strip() not in ("", "insufficient_evidence"))
+    return (0 if needs_review else 1, confidence, has_specific_cause)
 
 
 def build_filtered_summaries() -> dict[str, object]:
-    high_precision_rows = load_csv(HIGH_PRECISION_ROWS)
-    audit_rows = load_csv(AUDIT_ROWS)
+    candidate_repo_paths = load_candidate_repo_paths(CANDIDATES_ALL)
+    risky_rows = dedup_risky_rows(load_csv(RISKY_BACKTRACE), candidate_repo_paths)
+    risk_jsonl_rows = {
+        str(row.get("finding_id")): row for row in load_jsonl(RISKY_BACKTRACE_JSONL) if row.get("finding_id")
+    }
     attr_rows = enrich_attr_rows_with_final_cwe(
         load_csv(ATTR_ENRICHED),
-        {row["finding_id"]: row["cwe"] or "CWE-UNKNOWN" for row in high_precision_rows},
-        {row["finding_id"] for row in high_precision_rows},
+        {row["finding_id"]: row["cwe"] or "CWE-UNKNOWN" for row in risky_rows},
+        {row["finding_id"] for row in risky_rows},
     )
     tracing_by_fid = {
         row["finding_id"]: row
         for row in load_csv(CONV_TRACING)
-        if row["finding_id"] in {r["finding_id"] for r in high_precision_rows}
+        if row["finding_id"] in {r["finding_id"] for r in risky_rows}
     }
 
-    n_all_risky_rows = len(load_csv(RISKY_BACKTRACE))
+    n_all_risky_rows = len(risky_rows)
     n_total_candidates = count_nonempty_lines(CANDIDATES_ALL)
-    n_initial_code_risk_rows = len(audit_rows)
-    n_high_precision_rows = len(high_precision_rows)
-    n_obvious_false_positives = sum(row["obvious_false_positive"] == "True" for row in audit_rows)
-    n_local_only_context_rows = sum(row["local_only_context"] == "True" for row in audit_rows)
+    n_risky_rows = len(risky_rows)
 
     attribution_distribution = Counter(row["primary_cause"] for row in attr_rows)
-    top_cwe_counter = Counter((row["cwe"] or "CWE-UNKNOWN") for row in high_precision_rows)
+    top_cwe_counter = Counter(cwe for row in risky_rows for cwe in split_cwe_values(row["cwe"]) or ["CWE-UNKNOWN"])
 
     emergence_counter: Counter[int] = Counter()
     emergence_bucket_counter: Counter[str] = Counter()
@@ -272,12 +287,12 @@ def build_filtered_summaries() -> dict[str, object]:
             reg_den += 1
             reg = int(fc is not None and fc < ar)
             reg_num += reg
-            for cwe in (row.get("cwe") or "").split("|"):
+            for cwe in split_cwe_values(row.get("cwe")) or ["CWE-UNKNOWN"]:
                 if cwe:
                     reg_by_cwe[cwe].append(reg)
 
         src = "assistant_driven" if cause in ASSISTANT_DRIVEN else ("user_driven" if cause in USER_DRIVEN else "unclear")
-        for cwe in (row.get("cwe") or "").split("|"):
+        for cwe in split_cwe_values(row.get("cwe")) or ["CWE-UNKNOWN"]:
             if cwe:
                 source_by_cwe[cwe][src] += 1
 
@@ -335,23 +350,18 @@ def build_filtered_summaries() -> dict[str, object]:
     attr_summary = {
         "n_all_risky_rows": n_all_risky_rows,
         "n_total_candidates": n_total_candidates,
-        "n_initial_code_risk_rows": n_initial_code_risk_rows,
-        "n_code_risk_rows": n_high_precision_rows,
+        "n_initial_code_risk_rows": n_risky_rows,
+        "n_code_risk_rows": n_risky_rows,
         "attribution_distribution": {
-            cause: {"count": attribution_distribution[cause], "ratio": safe_prob(attribution_distribution[cause], n_high_precision_rows)}
+            cause: {"count": attribution_distribution[cause], "ratio": safe_prob(attribution_distribution[cause], n_risky_rows)}
             for cause in CAUSE_ORDER
         },
         "top_cwe": [{"cwe": cwe, "count": count} for cwe, count in top_cwe_counter.most_common(15)],
-        "audit": {
-            "n_obvious_false_positives": n_obvious_false_positives,
-            "n_local_only_context_rows": n_local_only_context_rows,
-            "n_high_precision_rows": n_high_precision_rows,
-            "high_precision_ratio_vs_code_risk": safe_prob(n_high_precision_rows, n_initial_code_risk_rows),
-        },
+        "audit": {"n_obvious_false_positives": 0, "n_local_only_context_rows": 0, "n_high_precision_rows": n_risky_rows, "high_precision_ratio_vs_code_risk": 1.0},
     }
 
     traj_summary = {
-        "n_code_risk_rows": n_high_precision_rows,
+        "n_code_risk_rows": n_risky_rows,
         "risk_emergence_position": {
             "covered_rows": emergence_total,
             "bucket_distribution": emergence_bucket_rows,
@@ -362,9 +372,9 @@ def build_filtered_summaries() -> dict[str, object]:
             "persistence_gap": {"count": len(persistence_gaps), "median": statistics.median(persistence_gaps) if persistence_gaps else None, "p90": p90(persistence_gaps)},
         },
         "user_vs_assistant_initiation": {
-            "assistant_first": {"count": initiation["assistant_first"], "ratio": safe_prob(initiation["assistant_first"], n_high_precision_rows)},
-            "user_or_context_first": {"count": initiation["user_or_context_first"], "ratio": safe_prob(initiation["user_or_context_first"], n_high_precision_rows)},
-            "unclear": {"count": initiation["unclear"], "ratio": safe_prob(initiation["unclear"], n_high_precision_rows)},
+            "assistant_first": {"count": initiation["assistant_first"], "ratio": safe_prob(initiation["assistant_first"], n_risky_rows)},
+            "user_or_context_first": {"count": initiation["user_or_context_first"], "ratio": safe_prob(initiation["user_or_context_first"], n_risky_rows)},
+            "unclear": {"count": initiation["unclear"], "ratio": safe_prob(initiation["unclear"], n_risky_rows)},
         },
         "assistant_security_regression_rate_proxy": {
             "numerator": reg_num,
@@ -381,8 +391,9 @@ def build_filtered_summaries() -> dict[str, object]:
         "attribution_source_by_cwe": source_cwe_rows,
         "risk_emergence_bucket_distribution": emergence_bucket_rows,
         "risk_escalation_samples": per_sample_rows,
-        "keep_fids": {row["finding_id"] for row in high_precision_rows},
-        "cwe_by_fid": {row["finding_id"]: row["cwe"] or "CWE-UNKNOWN" for row in high_precision_rows},
+        "keep_fids": {row["finding_id"] for row in risky_rows},
+        "cwe_by_fid": {row["finding_id"]: row["cwe"] or "CWE-UNKNOWN" for row in risky_rows},
+        "risky_jsonl_rows": risk_jsonl_rows,
     }
 
 
@@ -501,7 +512,7 @@ def build_key_insights(attr_summary: dict, traj_summary: dict) -> list[dict[str,
             "title": "Assistant Over-Implementation Dominates",
             "body": (
                 f"`assistant_over_implemented` accounts for "
-                f"{attr['assistant_over_implemented']['ratio']:.1%} of high-precision code-risk findings, "
+                f"{attr['assistant_over_implemented']['ratio']:.1%} of risky findings, "
                 "making assistant-side unnecessary expansion the single largest failure mode."
             ),
         },
@@ -522,7 +533,7 @@ def build_key_insights(attr_summary: dict, traj_summary: dict) -> list[dict[str,
         {
             "title": "Top Risk Families Are Concentrated",
             "body": (
-                "The highest-frequency code-risk buckets are "
+                "The highest-frequency risk buckets are "
                 + ", ".join(f"{row['cwe']} ({row['count']})" for row in top_cwe)
                 + "."
             ),
@@ -531,7 +542,8 @@ def build_key_insights(attr_summary: dict, traj_summary: dict) -> list[dict[str,
 
 
 def build_findings(risk_escalation_rows: list[dict[str, object]], cwe_by_fid: dict[str, str], keep_fids: set[str]) -> list[dict[str, object]]:
-    risky_rows = {row["finding_id"]: row for row in load_csv(RISKY_BACKTRACE)}
+    candidate_repo_paths = load_candidate_repo_paths(CANDIDATES_ALL)
+    risky_rows = {row["finding_id"]: row for row in dedup_risky_rows(load_csv(RISKY_BACKTRACE), candidate_repo_paths)}
     risky_jsonl_rows = {str(row.get("finding_id")): row for row in load_jsonl(RISKY_BACKTRACE_JSONL) if row.get("finding_id")}
 
     findings: list[dict[str, object]] = []
@@ -567,6 +579,8 @@ def build_findings(risk_escalation_rows: list[dict[str, object]], cwe_by_fid: di
                 "assistant_candidate_text_short": sanitize_text(risky["assistant_candidate_text_short"]),
                 "assistant_candidate_preview": truncate(risky["assistant_candidate_text_short"], 280),
                 "nearest_user_preview": truncate(risky["nearest_user_text_short"], 220),
+                "dedup_count": to_int(str(risky.get("dedup_count") or "")) or 1,
+                "dedup_finding_ids": risky.get("dedup_finding_ids") or [row["finding_id"]],
                 "trajectory_context": build_stage_context(chat_path, row, risky),
             }
         )
@@ -615,8 +629,8 @@ def main() -> None:
     payload = {
         "meta": {
             "title": "Vibe-Coding Risk Explorer",
-            "subtitle": "Interactive overview and drill-down for the high-precision code-risk subset",
-            "data_source": "analysis/output/code_risk_analysis/high_precision_code_risk_rows.csv",
+            "subtitle": "Interactive overview and drill-down for the full risky-row dataset",
+            "data_source": "analysis/output/risky_backtrace_all.csv",
         },
         "overview": build_overview(attr_summary, traj_summary),
         "insights": build_key_insights(attr_summary, traj_summary),

@@ -78,18 +78,18 @@ python3 analysis/scripts/analyze_code_risk_subset.py
 This writes:
 
 - `analysis/output/code_risk_analysis/code_risk_audit.csv`: all `2264` code-risk rows with audit flags
-- `analysis/output/code_risk_analysis/high_precision_code_risk_rows.csv`: code-risk rows after removing obvious false positives and local-only/context-dependent rows
+- `analysis/output/code_risk_analysis/high_precision_code_risk_rows.csv`: the stricter paper-facing subset after removing obvious false positives and local-only/context-dependent rows
 - `analysis/output/code_risk_analysis/attribution_summary.json`: summary counts including `audit.n_obvious_false_positives`, `audit.n_local_only_context_rows`, and `audit.n_high_precision_rows`
 
 ### Risk Annotator Quick Start
 
-The repo includes a local review UI for the 1887-row risk dataset under `risk_annotator/`.
+The repo includes a local review UI for the current risky dataset under `risk_annotator/`.
 
 Required files:
 
-- `analysis/output/risk_dataset_export_1887/manifest.json`
-- `analysis/output/risk_dataset_export_1887/risk_dataset.csv`
-- `analysis/output/risk_dataset_export_1887/source_files/*.json`
+- `analysis/output/risk_dataset_export_350/manifest.json`
+- `analysis/output/risk_dataset_export_350/risk_dataset.csv`
+- `analysis/output/risk_dataset_export_350/source_files/*.json`
 
 If you need to rebuild the export:
 
@@ -396,7 +396,7 @@ uv run python analysis/scripts/judge_attribution_openrouter.py \
   --prompt analysis/prompts/attribution_judge_v1.md \
   --out analysis/output/attribution_labels_sample.jsonl \
   --limit 50 \
-  --model google/gemini-2.5-flash-lite \
+  --model openai/gpt-5.4-mini \
   --temperature 0.0
 ```
 
@@ -407,7 +407,7 @@ uv run python analysis/scripts/judge_attribution_openrouter.py \
   --input analysis/output/risky_backtrace_all.jsonl \
   --prompt analysis/prompts/attribution_judge_v1.md \
   --out analysis/output/attribution_labels_all.jsonl \
-  --model google/gemini-2.5-flash-lite \
+  --model openai/gpt-5.4-mini \
   --temperature 0.0
 ```
 

@@ -4,10 +4,11 @@ This folder contains a lightweight interactive website for exploring the project
 
 ## What It Shows
 
-- Overview metrics and key insights from the latest `analysis/output/code_risk_analysis`
+- Overview metrics and key insights from the latest risky-row analysis outputs
 - Distribution views for attribution, top CWE, emergence buckets, and temporal degradation
 - An interactive findings browser with filters for `CWE`, `primary_cause`, `severity`, and block type
 - Drill-down detail panels for concrete risky findings
+- CWE labels and tooltips are backed by `analysis/output/cwe_catalog_full.json`, so the UI shows MITRE's official CWE names and descriptions
 
 ## How To Refresh Data
 

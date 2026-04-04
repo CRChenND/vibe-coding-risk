@@ -9,9 +9,9 @@ from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_OUT_DIR = ROOT / "analysis/output/risk_dataset_export_1887"
+DEFAULT_OUT_DIR = ROOT / "analysis/output/risk_dataset_export_350"
 DEFAULT_SITE_DATA = ROOT / "risk_explorer/data/site_data.json"
-DEFAULT_HIGH_PRECISION = ROOT / "analysis/output/code_risk_analysis/high_precision_code_risk_rows.csv"
+DEFAULT_RISKY_ROWS = ROOT / "analysis/output/risky_backtrace_all.csv"
 DEFAULT_ATTRIBUTION = ROOT / "analysis/output/attribution_analysis_all/attribution_enriched.csv"
 DEFAULT_TRACING = ROOT / "analysis/output/attribution_analysis_all/conversation_tracing.csv"
 DEFAULT_BACKTRACE = ROOT / "analysis/output/risky_backtrace_all.jsonl"
@@ -35,10 +35,10 @@ CWE_EXPLANATIONS = {
 
 
 def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Export the high-precision risk dataset to CSV plus per-row source files.")
+    p = argparse.ArgumentParser(description="Export the risky-row dataset to CSV plus per-row source files.")
     p.add_argument("--out-dir", type=Path, default=DEFAULT_OUT_DIR)
     p.add_argument("--site-data", type=Path, default=DEFAULT_SITE_DATA)
-    p.add_argument("--high-precision", type=Path, default=DEFAULT_HIGH_PRECISION)
+    p.add_argument("--risky-rows", "--high-precision", dest="risky_rows", type=Path, default=DEFAULT_RISKY_ROWS)
     p.add_argument("--attribution", type=Path, default=DEFAULT_ATTRIBUTION)
     p.add_argument("--tracing", type=Path, default=DEFAULT_TRACING)
     p.add_argument("--backtrace", type=Path, default=DEFAULT_BACKTRACE)
@@ -122,7 +122,6 @@ def main() -> None:
     args = parse_args()
 
     site_data = load_json(args.site_data)
-    high_precision_rows = load_csv(args.high_precision)
     attribution_rows = load_csv(args.attribution)
     tracing_rows = load_csv(args.tracing)
     backtrace_rows = load_jsonl(args.backtrace)
@@ -172,11 +171,13 @@ def main() -> None:
         )
         writer.writeheader()
 
-        for index, base_row in enumerate(high_precision_rows, start=1):
-            finding_id = str(base_row.get("finding_id", ""))
-            candidate_id = str(base_row.get("candidate_id", ""))
+        findings = [row for row in site_data.get("findings", []) if isinstance(row, dict)]
+
+        for index, site_row in enumerate(findings, start=1):
+            finding_id = str(site_row.get("finding_id", ""))
+            candidate_id = str(site_row.get("candidate_id", ""))
             attr_row = attribution_by_id.get(finding_id, {})
-            site_row = findings_by_id.get(finding_id) or {}
+            site_row = findings_by_id.get(finding_id) or dict(site_row)
             backtrace_row = backtrace_by_id.get(finding_id) or {}
             tracing_row = tracing_by_id.get(finding_id) or {}
             judge_row = judge_rows.get(candidate_id, {})
@@ -197,7 +198,7 @@ def main() -> None:
                 risk = {}
 
             cwe = first_nonempty(
-                base_row.get("cwe"),
+                site_row.get("cwe"),
                 (judge_row.get("cwe") or [None])[0] if isinstance(judge_row.get("cwe"), list) and judge_row.get("cwe") else "",
                 attr_row.get("cwe"),
                 site_row.get("cwe"),
@@ -233,9 +234,9 @@ def main() -> None:
                     "index": index,
                     "finding_id": finding_id,
                     "candidate_id": candidate_id,
-                    "chat_id": str(site_row.get("chat_id") or base_row.get("chat_id") or ""),
-                    "severity": str(base_row.get("severity") or ""),
-                    "confidence": str(base_row.get("confidence") or ""),
+                    "chat_id": str(site_row.get("chat_id") or ""),
+                    "severity": str(site_row.get("severity") or ""),
+                    "confidence": str(site_row.get("confidence") or ""),
                     "cwe": cwe,
                     "cwe_reason": judge_reasoning or cwe_reason(cwe),
                     "attribution_domain": attribution_domain,
@@ -247,16 +248,18 @@ def main() -> None:
                     "nearest_user_message_index": stringify_keep_zero(site_row.get("nearest_user_message_index")),
                     "nearest_user_text_short": stringify_keep_zero(site_row.get("nearest_user_text_short")),
                     "assistant_candidate_text_short": stringify_keep_zero(site_row.get("assistant_candidate_text_short")),
+                    "dedup_count": site_row.get("dedup_count") or 1,
+                    "dedup_finding_ids": site_row.get("dedup_finding_ids") or [finding_id],
                     "source_file": f"source_files/{index}.json",
                 }
             )
 
-            source_bytes = read_raw_chat_bytes(args.chats_dir, str(site_row.get("chat_id") or base_row.get("chat_id") or ""))
+            source_bytes = read_raw_chat_bytes(args.chats_dir, str(site_row.get("chat_id") or ""))
             (source_dir / f"{index}.json").write_bytes(source_bytes)
 
     manifest_path.write_text(json.dumps(manifest_rows, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    print(f"Exported {len(high_precision_rows)} rows")
+    print(f"Exported {len(findings)} rows")
     print(f"CSV: {csv_path}")
     print(f"Manifest: {manifest_path}")
     print(f"Source files: {source_dir}")
