@@ -12,9 +12,7 @@
         <div>
           <p class="eyebrow">Manual Review</p>
           <h1>Risk Dataset Annotator</h1>
-          <p class="subtitle">
-            Review the 1887-item risk dataset, inspect the original chat transcript, and record annotations with automatic local saving.
-          </p>
+          <p id="dataset-subtitle" class="subtitle">Review the current risk dataset, inspect the original chat transcript, and record annotations with automatic local saving.</p>
         </div>
         <div class="topbar-actions">
           <button id="export-json" type="button">Export JSON</button>
@@ -62,7 +60,7 @@
 
           <label class="field">
             <span>Jump to Index</span>
-            <input id="jump-input" type="number" min="1" step="1" placeholder="1-1887" />
+            <input id="jump-input" type="number" min="1" step="1" placeholder="Index" />
           </label>
 
           <div class="list-head">

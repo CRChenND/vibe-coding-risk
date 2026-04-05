@@ -1,5 +1,9 @@
-const MANIFEST_URL = "../analysis/output/risk_dataset_export_350/manifest.json";
-const SOURCE_BASE = "../analysis/output/risk_dataset_export_350/";
+const DATASET_VERSION_LABEL = "828";
+const DATASET_EXPORT_CANDIDATES = [
+  "../analysis/output/risk_dataset_export_828/",
+  "../analysis/output/risk_dataset_export_350/",
+  "../analysis/output/risk_dataset_export/",
+];
 const STORAGE_KEY = "vibe-risk-annotations-v1";
 const PAGE_SIZES = [20, 25, 50];
 const REVIEW_STATES = ["unreviewed", "approve", "reject", "unsure"];
@@ -90,6 +94,7 @@ const state = {
   rows: [],
   filteredRows: [],
   selectedFindingId: null,
+  datasetBase: "",
   search: "",
   statusFilter: "all",
   cweFilter: "all",
@@ -515,7 +520,10 @@ function getCweGroups(rows = state.rows) {
 async function loadChat(row) {
   if (!row) return null;
   if (state.chatCache.has(row.source_file)) return state.chatCache.get(row.source_file);
-  const res = await fetch(`${SOURCE_BASE}${row.source_file}`);
+  if (!state.datasetBase) {
+    throw new Error("No dataset export directory is configured.");
+  }
+  const res = await fetch(`${state.datasetBase}${row.source_file}`);
   if (!res.ok) {
     throw new Error(`Failed to load source file ${row.source_file}`);
   }
@@ -552,6 +560,17 @@ function renderStats() {
       `
     )
     .join("");
+}
+
+function renderDatasetCopy() {
+  if (els.datasetSubtitle) {
+    const versionText = DATASET_VERSION_LABEL ? ` (${DATASET_VERSION_LABEL} version)` : "";
+    els.datasetSubtitle.textContent = `Review the current risk dataset${versionText}, inspect the original chat transcript, and record annotations with automatic local saving.`;
+  }
+  if (els.jumpInput) {
+    els.jumpInput.placeholder = state.rows.length ? `1-${state.rows.length}` : "Index";
+    els.jumpInput.max = String(state.rows.length || "");
+  }
 }
 
 function statusPill(status) {
@@ -1023,6 +1042,7 @@ function bindControls() {
 
 async function init() {
   els.stats = document.querySelector("#stats");
+  els.datasetSubtitle = document.querySelector("#dataset-subtitle");
   els.searchInput = document.querySelector("#search-input");
   els.statusFilter = document.querySelector("#status-filter");
   els.cweFilter = document.querySelector("#cwe-filter");
@@ -1056,9 +1076,18 @@ async function init() {
   els.pageSize.innerHTML = PAGE_SIZES.map((size) => `<option value="${size}" ${size === state.pageSize ? "selected" : ""}>${size}</option>`).join("");
 
   try {
-    const res = await fetch(MANIFEST_URL);
-    if (!res.ok) throw new Error(`Failed to load manifest: ${res.status}`);
-    state.rows = await res.json();
+    let loaded = false;
+    for (const base of DATASET_EXPORT_CANDIDATES) {
+      const res = await fetch(`${base}manifest.json`);
+      if (!res.ok) continue;
+      state.rows = await res.json();
+      state.datasetBase = base;
+      loaded = true;
+      break;
+    }
+    if (!loaded) {
+      throw new Error(`Failed to load manifest from: ${DATASET_EXPORT_CANDIDATES.join(", ")}`);
+    }
   } catch (err) {
     els.recordTitle.textContent = "Failed to load manifest";
     els.recordMeta.textContent = String(err);
@@ -1073,6 +1102,7 @@ async function init() {
   bindControls();
   state.filteredRows = getFilteredRows();
   state.selectedFindingId = state.rows[0].finding_id;
+  renderDatasetCopy();
   renderStats();
   renderQueue();
   await renderRecord();

@@ -9,7 +9,7 @@ from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_OUT_DIR = ROOT / "analysis/output/risk_dataset_export_350"
+DEFAULT_OUT_DIR = ROOT / "analysis/output/risk_dataset_export_828"
 DEFAULT_SITE_DATA = ROOT / "risk_explorer/data/site_data.json"
 DEFAULT_RISKY_ROWS = ROOT / "analysis/output/risky_backtrace_all.csv"
 DEFAULT_ATTRIBUTION = ROOT / "analysis/output/attribution_analysis_all/attribution_enriched.csv"

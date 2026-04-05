@@ -1,6 +1,6 @@
 # Risk Annotator
 
-This is a local manual review tool for the current risky dataset exported under `analysis/output/risk_dataset_export_350/`.
+This is a local manual review tool for the current risky dataset export. The UI now prefers `analysis/output/risk_dataset_export_828/` and falls back to older export directories if needed.
 
 ## Run
 
@@ -16,8 +16,8 @@ python3 -m http.server 8000
 
 ## Data it loads
 
-- `analysis/output/risk_dataset_export_350/manifest.json`
-- `analysis/output/risk_dataset_export_350/source_files/*.json`
+- `analysis/output/risk_dataset_export_828/manifest.json`
+- `analysis/output/risk_dataset_export_828/source_files/*.json`
 
 ## Annotation fields
 

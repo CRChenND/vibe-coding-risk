@@ -87,9 +87,9 @@ The repo includes a local review UI for the current risky dataset under `risk_an
 
 Required files:
 
-- `analysis/output/risk_dataset_export_350/manifest.json`
-- `analysis/output/risk_dataset_export_350/risk_dataset.csv`
-- `analysis/output/risk_dataset_export_350/source_files/*.json`
+- `analysis/output/risk_dataset_export_828/manifest.json`
+- `analysis/output/risk_dataset_export_828/risk_dataset.csv`
+- `analysis/output/risk_dataset_export_828/source_files/*.json`
 
 If you need to rebuild the export:
 

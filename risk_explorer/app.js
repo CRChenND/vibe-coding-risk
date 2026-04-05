@@ -332,7 +332,6 @@ function extractRiskSignals(text) {
 function renderHeroMetrics(overview) {
   const mount = document.querySelector("#hero-metrics");
   const items = [
-    ["Risk Rows", fmtInt(overview.n_code_risk_rows)],
     ["Assistant-First", fmtPct(overview.assistant_first_ratio)],
     ["Early Emergence", fmtPct(overview.early_emergence_ratio)],
     ["Risk Gap p90", String(overview.risk_gap_p90)],
@@ -342,7 +341,6 @@ function renderHeroMetrics(overview) {
   mount.innerHTML = "";
   items.forEach(([label, value]) => {
     const tooltipMap = {
-      "Risk Rows": "Rows shown in the explorer after widening the dataset to include all risky findings, including security-advice rows that may still affect users.",
       "Assistant-First": "Share of findings where the risky direction is attributed mainly to the assistant rather than user/context.",
       "Early Emergence": "Share of traced findings whose first concrete risk signal appears in turns 0-1.",
       "Risk Gap p90": "90th percentile of the number of turns between first concrete risk signal and final risky assistant output.",
@@ -1001,8 +999,9 @@ function bindEvents() {
 }
 
 function render(data) {
-  document.querySelector("#hero-subtitle").textContent =
-    `${data.meta.subtitle}. Risk rows: ${fmtInt(data.overview.n_code_risk_rows)} from a total corpus of ${fmtInt(data.overview.n_total_candidates)} extracted candidates.`;
+  const datasetVersion = String(data.meta.dataset_version || "").trim();
+  const versionSuffix = datasetVersion ? ` Dataset version: ${datasetVersion}.` : "";
+  document.querySelector("#hero-subtitle").textContent = `${data.meta.subtitle}.${versionSuffix}`;
   renderHeroMetrics(data.overview);
   renderInsights(data.insights);
 
