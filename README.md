@@ -81,23 +81,31 @@ This writes:
 - `analysis/output/code_risk_analysis/high_precision_code_risk_rows.csv`: the stricter paper-facing subset after removing obvious false positives and local-only/context-dependent rows
 - `analysis/output/code_risk_analysis/attribution_summary.json`: summary counts including `audit.n_obvious_false_positives`, `audit.n_local_only_context_rows`, and `audit.n_high_precision_rows`
 
-### Risk Annotator Quick Start
+### Web UIs Quick Start
 
-The repo includes a local review UI for the current risky dataset under `risk_annotator/`.
+The repo includes two local websites:
+
+- `risk_annotator/`: manual review UI for the current deduped `828`-row dataset
+- `risk_explorer/`: read-only explorer for the same dataset with aggregate charts and finding drill-down
 
 Required files:
 
-- `analysis/output/risk_dataset_export_828/manifest.json`
-- `analysis/output/risk_dataset_export_828/risk_dataset.csv`
-- `analysis/output/risk_dataset_export_828/source_files/*.json`
+- For `risk_annotator`:
+  - `analysis/output/risk_dataset_export_828/manifest.json`
+  - `analysis/output/risk_dataset_export_828/risk_dataset.csv`
+  - `analysis/output/risk_dataset_export_828/source_files/*.json`
+- For `risk_explorer`:
+  - `risk_explorer/data/site_data.json`
+  - `analysis/output/cwe_catalog_full.json`
 
-If you need to rebuild the export:
+If you need to rebuild the UI data:
 
 ```bash
-uv run python analysis/scripts/export_risk_dataset.py
+python3 analysis/scripts/build_risk_explorer_data.py
+python3 analysis/scripts/export_risk_dataset.py
 ```
 
-To launch the annotator, serve the repo root and open the app in a browser:
+To launch both sites, serve the repo root:
 
 ```bash
 python3 -m http.server 8000
@@ -107,9 +115,10 @@ Then open:
 
 ```text
 http://localhost:8000/risk_annotator/
+http://localhost:8000/risk_explorer/
 ```
 
-How to use it:
+`risk_annotator` usage:
 
 - `Queue`: browse records, search, and filter by annotation status
 - `CWE Groups`: use the dropdown to filter the queue to a single CWE and inspect all rows in that group together
@@ -120,7 +129,7 @@ How to use it:
 - Click a risky assistant block to jump to the nearest user prompt; click that user prompt to jump back
 - Use `Export JSON` or `Export CSV` to download your annotations
 
-Annotation fields:
+`risk_annotator` annotation fields:
 
 - `review_state`: `unreviewed`, `approve`, `reject`, `unsure`
 - `cwe_correct`: `yes`, `no`, `unsure`
@@ -131,8 +140,8 @@ Annotation fields:
 
 Notes:
 
-- Annotations are autosaved in browser `localStorage`
-- Keyboard shortcuts: `1` = `approve`, `2` = `reject`, `3` = `unsure`, `4` = `unreviewed`
+- `risk_annotator` annotations are autosaved in browser `localStorage`
+- `risk_annotator` keyboard shortcuts: `1` = `approve`, `2` = `reject`, `3` = `unsure`, `4` = `unreviewed`
 
 ### 1. Extract candidates
 

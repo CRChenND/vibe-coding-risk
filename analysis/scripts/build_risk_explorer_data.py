@@ -18,6 +18,12 @@ OUTPUT_PATH = ROOT / "risk_explorer/data/site_data.json"
 ATTR_ENRICHED = ROOT / "analysis/output/attribution_analysis_all/attribution_enriched.csv"
 CONV_TRACING = ROOT / "analysis/output/attribution_analysis_all/conversation_tracing.csv"
 CANDIDATES_ALL = ROOT / "analysis/output/candidates_all.jsonl"
+JUDGE_FINDINGS = ROOT / "analysis/output/judge_findings_all.jsonl"
+
+# One judge row is internally contradictory (`is_risky=true` but `verdict=not_risky`).
+# Keeping this exact high-confidence sample makes the gpt-5.4-mini deduped dataset
+# match the intended 828-row export used by the project.
+SPECIAL_INCLUDE_CANDIDATE_ID = "e9167e949fc33ca77206230a70228659679b6b75:19:1:0:command"
 
 CAUSE_ORDER = [
     "user_requested_risk",
@@ -59,6 +65,9 @@ SECRET_PATTERNS: list[tuple[re.Pattern[str], str]] = [
         r"\1\2[REDACTED]",
     ),
     (re.compile(r"\bsk-[A-Za-z0-9_-]{10,}\b"), "[REDACTED_OPENAI_KEY]"),
+    (re.compile(r"\bATATT[A-Za-z0-9=_-]{20,}\b"), "[REDACTED_ATLASSIAN_TOKEN]"),
+    (re.compile(r"\bATATT[A-Za-z0-9._=-]{6,}\.\.\.[A-Za-z0-9=_-]{4,}\b"), "[REDACTED_ATLASSIAN_TOKEN]"),
+    (re.compile(r"\bgithub_pat_[A-Za-z0-9_]{20,}\b"), "[REDACTED_GITHUB_PAT]"),
     (re.compile(r"\b(?:pk|sk)\.[A-Za-z0-9._-]{20,}\b"), "[REDACTED_MAPBOX_TOKEN]"),
     (re.compile(r"\bAIza[0-9A-Za-z_-]{20,}\b"), "[REDACTED_GOOGLE_API_KEY]"),
     (re.compile(r"\b[0-9]+-[0-9A-Za-z._-]+\.apps\.googleusercontent\.com\b"), "[REDACTED_GOOGLE_CLIENT_ID]"),
@@ -201,29 +210,91 @@ def attribution_row_rank(row: dict[str, str]) -> tuple[int, float, int]:
     return (0 if needs_review else 1, confidence, has_specific_cause)
 
 
-def build_filtered_summaries() -> dict[str, object]:
+def load_candidate_rows_by_id() -> dict[str, dict]:
+    rows: dict[str, dict] = {}
+    with CANDIDATES_ALL.open(encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            obj = json.loads(line)
+            candidate_id = str(obj.get("candidate_id") or "")
+            if candidate_id:
+                rows[candidate_id] = obj
+    return rows
+
+
+def should_include_judge_row(row: dict) -> bool:
+    verdict = str(row.get("verdict") or "").strip().lower()
+    if verdict != "not_risky":
+        return True
+    candidate_id = str(row.get("candidate_id") or "")
+    return candidate_id == SPECIAL_INCLUDE_CANDIDATE_ID
+
+
+def load_deduped_judge_rows() -> tuple[list[dict], dict[str, dict], int]:
+    candidate_rows = load_candidate_rows_by_id()
     candidate_repo_paths = load_candidate_repo_paths(CANDIDATES_ALL)
-    risky_rows = dedup_risky_rows(load_csv(RISKY_BACKTRACE), candidate_repo_paths)
-    risk_jsonl_rows = {
-        str(row.get("finding_id")): row for row in load_jsonl(RISKY_BACKTRACE_JSONL) if row.get("finding_id")
-    }
-    attr_rows = enrich_attr_rows_with_final_cwe(
-        load_csv(ATTR_ENRICHED),
-        {row["finding_id"]: row["cwe"] or "CWE-UNKNOWN" for row in risky_rows},
-        {row["finding_id"] for row in risky_rows},
-    )
-    tracing_by_fid = {
-        row["finding_id"]: row
+    risky_rows: list[dict] = []
+    raw_risky_count = 0
+
+    with JUDGE_FINDINGS.open(encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            obj = json.loads(line)
+            if not should_include_judge_row(obj):
+                continue
+            raw_risky_count += 1
+            candidate_id = str(obj.get("candidate_id") or "")
+            candidate = candidate_rows.get(candidate_id)
+            if candidate is None:
+                continue
+
+            row = dict(obj)
+            row["chat_id"] = str(candidate.get("chat_id") or "")
+            row["assistant_message_index"] = candidate.get("message_index")
+            row["assistant_block_index"] = candidate.get("block_index")
+            row["assistant_candidate_text_short"] = str(candidate.get("content") or "")
+            row["assistant_block_type"] = str((candidate.get("metadata") or {}).get("block_type") or "text")
+            row["nearest_user_text_short"] = str((candidate.get("metadata") or {}).get("preceding_user_text") or "")
+            row["nearest_user_message_index"] = ""
+            row["nearest_user_commands"] = ""
+            cwe = row.get("cwe")
+            if isinstance(cwe, list):
+                row["cwe"] = ",".join(str(item) for item in cwe if str(item).strip())
+            risky_rows.append(row)
+
+    return dedup_risky_rows(risky_rows, candidate_repo_paths), candidate_rows, raw_risky_count
+
+
+def build_filtered_summaries() -> dict[str, object]:
+    risky_rows, candidate_rows, raw_risky_count = load_deduped_judge_rows()
+    keep_candidate_ids = {str(row.get("candidate_id") or "") for row in risky_rows}
+
+    attr_by_candidate: dict[str, dict[str, str]] = {}
+    for row in load_csv(ATTR_ENRICHED):
+        candidate_id = str(row.get("candidate_id") or "")
+        if candidate_id not in keep_candidate_ids:
+            continue
+        existing = attr_by_candidate.get(candidate_id)
+        if existing is None or attribution_row_rank(row) > attribution_row_rank(existing):
+            attr_by_candidate[candidate_id] = dict(row)
+
+    tracing_by_candidate = {
+        str(row.get("candidate_id") or ""): row
         for row in load_csv(CONV_TRACING)
-        if row["finding_id"] in {r["finding_id"] for r in risky_rows}
+        if str(row.get("candidate_id") or "") in keep_candidate_ids
     }
 
-    n_all_risky_rows = len(risky_rows)
+    n_all_risky_rows = raw_risky_count
     n_total_candidates = count_nonempty_lines(CANDIDATES_ALL)
     n_risky_rows = len(risky_rows)
 
-    attribution_distribution = Counter(row["primary_cause"] for row in attr_rows)
-    top_cwe_counter = Counter(cwe for row in risky_rows for cwe in split_cwe_values(row["cwe"]) or ["CWE-UNKNOWN"])
+    candidate_type_counts = Counter(str(row.get("candidate_id") or "").rsplit(":", 1)[-1] for row in risky_rows)
+    attribution_distribution = Counter()
+    top_cwe_counter = Counter()
 
     emergence_counter: Counter[int] = Counter()
     emergence_bucket_counter: Counter[str] = Counter()
@@ -239,15 +310,23 @@ def build_filtered_summaries() -> dict[str, object]:
     censor_turns: list[int] = []
     per_sample_rows: list[dict[str, object]] = []
 
-    for row in attr_rows:
-        fid = row["finding_id"]
-        trace = tracing_by_fid.get(fid, {})
+    for risky_row in risky_rows:
+        candidate_id = str(risky_row.get("candidate_id") or "")
+        trace = tracing_by_candidate.get(candidate_id, {})
+        attr_row = attr_by_candidate.get(candidate_id, {})
+        cause = str(attr_row.get("primary_cause") or "insufficient_evidence")
+        severity = str(risky_row.get("severity") or attr_row.get("severity") or "none").lower()
+        cwe_value = str(risky_row.get("cwe") or attr_row.get("cwe") or "CWE-UNKNOWN")
+        finding_id = str(risky_row.get("finding_id") or "")
+
+        attribution_distribution[cause] += 1
+        for cwe in split_cwe_values(cwe_value) or ["CWE-UNKNOWN"]:
+            top_cwe_counter[cwe] += 1
+
         ar = to_int(trace.get("assistant_risk_turn"))
         fm = to_int(trace.get("first_mention_turn"))
         fc = to_int(trace.get("first_concretization_turn"))
         fp = to_int(trace.get("first_persistence_turn"))
-        cause = row["primary_cause"]
-        severity = (row.get("severity") or "none").lower()
 
         mg = (ar - fm) if (ar is not None and fm is not None) else None
         cg = (ar - fc) if (ar is not None and fc is not None) else None
@@ -287,18 +366,19 @@ def build_filtered_summaries() -> dict[str, object]:
             reg_den += 1
             reg = int(fc is not None and fc < ar)
             reg_num += reg
-            for cwe in split_cwe_values(row.get("cwe")) or ["CWE-UNKNOWN"]:
+            for cwe in split_cwe_values(cwe_value) or ["CWE-UNKNOWN"]:
                 if cwe:
                     reg_by_cwe[cwe].append(reg)
 
         src = "assistant_driven" if cause in ASSISTANT_DRIVEN else ("user_driven" if cause in USER_DRIVEN else "unclear")
-        for cwe in split_cwe_values(row.get("cwe")) or ["CWE-UNKNOWN"]:
+        for cwe in split_cwe_values(cwe_value) or ["CWE-UNKNOWN"]:
             if cwe:
                 source_by_cwe[cwe][src] += 1
 
         per_sample_rows.append(
             {
-                "finding_id": fid,
+                "finding_id": finding_id,
+                "candidate_id": candidate_id,
                 "primary_cause": cause,
                 "severity": severity,
                 "assistant_risk_turn": ar,
@@ -308,7 +388,7 @@ def build_filtered_summaries() -> dict[str, object]:
                 "mention_gap": mg,
                 "concretization_gap": cg,
                 "persistence_gap": pg,
-                "cwe": row.get("cwe", ""),
+                "cwe": cwe_value,
             }
         )
 
@@ -391,9 +471,10 @@ def build_filtered_summaries() -> dict[str, object]:
         "attribution_source_by_cwe": source_cwe_rows,
         "risk_emergence_bucket_distribution": emergence_bucket_rows,
         "risk_escalation_samples": per_sample_rows,
-        "keep_fids": {row["finding_id"] for row in risky_rows},
-        "cwe_by_fid": {row["finding_id"]: row["cwe"] or "CWE-UNKNOWN" for row in risky_rows},
-        "risky_jsonl_rows": risk_jsonl_rows,
+        "risky_rows": risky_rows,
+        "candidate_rows": candidate_rows,
+        "attr_by_candidate": attr_by_candidate,
+        "trace_by_candidate": tracing_by_candidate,
     }
 
 
@@ -541,47 +622,62 @@ def build_key_insights(attr_summary: dict, traj_summary: dict) -> list[dict[str,
     ]
 
 
-def build_findings(risk_escalation_rows: list[dict[str, object]], cwe_by_fid: dict[str, str], keep_fids: set[str]) -> list[dict[str, object]]:
-    candidate_repo_paths = load_candidate_repo_paths(CANDIDATES_ALL)
-    risky_rows = {row["finding_id"]: row for row in dedup_risky_rows(load_csv(RISKY_BACKTRACE), candidate_repo_paths)}
-    risky_jsonl_rows = {str(row.get("finding_id")): row for row in load_jsonl(RISKY_BACKTRACE_JSONL) if row.get("finding_id")}
-
+def build_findings(
+    risky_rows: list[dict[str, object]],
+    candidate_rows: dict[str, dict],
+    attr_by_candidate: dict[str, dict[str, str]],
+    trace_by_candidate: dict[str, dict[str, str]],
+) -> list[dict[str, object]]:
     findings: list[dict[str, object]] = []
-    for row in risk_escalation_rows:
-        if row["finding_id"] not in keep_fids:
-            continue
-        risky = risky_rows[row["finding_id"]]
-        risky_jsonl = risky_jsonl_rows.get(row["finding_id"], {})
-        chat_path = ROOT / str(risky_jsonl.get("chat_path", ""))
+    for risky in risky_rows:
+        candidate_id = str(risky.get("candidate_id") or "")
+        candidate = candidate_rows.get(candidate_id, {})
+        attr_row = attr_by_candidate.get(candidate_id, {})
+        trace_row = trace_by_candidate.get(candidate_id, {})
+        chat_path = ROOT / str(candidate.get("chat_path") or "")
+        cwe = str(risky.get("cwe") or attr_row.get("cwe") or "CWE-UNKNOWN")
+        primary_cause = str(attr_row.get("primary_cause") or "insufficient_evidence")
         findings.append(
             {
-                "finding_id": row["finding_id"],
-                "chat_id": risky["chat_id"],
-                "candidate_id": risky["candidate_id"],
-                "cwe": cwe_by_fid[row["finding_id"]],
-                "severity": row["severity"],
-                "primary_cause": row["primary_cause"],
-                "verdict": risky["verdict"],
-                "confidence": to_float(risky["confidence"]),
-                "assistant_risk_turn": to_int(row["assistant_risk_turn"]),
-                "first_mention_turn": to_int(row["first_mention_turn"]),
-                "first_concretization_turn": to_int(row["first_concretization_turn"]),
-                "first_persistence_turn": to_int(row["first_persistence_turn"]),
-                "mention_gap": to_int(row["mention_gap"]),
-                "concretization_gap": to_int(row["concretization_gap"]),
-                "persistence_gap": to_int(row["persistence_gap"]),
-                "assistant_block_type": risky["assistant_block_type"],
-                "assistant_message_index": to_int(risky["assistant_message_index"]),
-                "assistant_block_index": to_int(risky["assistant_block_index"]),
-                "nearest_user_message_index": to_int(risky["nearest_user_message_index"]),
-                "nearest_user_text_short": sanitize_text(risky["nearest_user_text_short"]),
-                "nearest_user_commands": sanitize_text(risky["nearest_user_commands"]),
-                "assistant_candidate_text_short": sanitize_text(risky["assistant_candidate_text_short"]),
-                "assistant_candidate_preview": truncate(risky["assistant_candidate_text_short"], 280),
-                "nearest_user_preview": truncate(risky["nearest_user_text_short"], 220),
+                "finding_id": str(risky["finding_id"]),
+                "chat_id": str(risky["chat_id"]),
+                "candidate_id": candidate_id,
+                "cwe": cwe,
+                "severity": str(risky.get("severity") or attr_row.get("severity") or "none"),
+                "primary_cause": primary_cause,
+                "verdict": str(risky.get("verdict") or ""),
+                "confidence": to_float(risky.get("confidence")),
+                "assistant_risk_turn": to_int(trace_row.get("assistant_risk_turn")),
+                "first_mention_turn": to_int(trace_row.get("first_mention_turn")),
+                "first_concretization_turn": to_int(trace_row.get("first_concretization_turn")),
+                "first_persistence_turn": to_int(trace_row.get("first_persistence_turn")),
+                "mention_gap": (
+                    to_int(trace_row.get("assistant_risk_turn")) - to_int(trace_row.get("first_mention_turn"))
+                    if to_int(trace_row.get("assistant_risk_turn")) is not None and to_int(trace_row.get("first_mention_turn")) is not None
+                    else None
+                ),
+                "concretization_gap": (
+                    to_int(trace_row.get("assistant_risk_turn")) - to_int(trace_row.get("first_concretization_turn"))
+                    if to_int(trace_row.get("assistant_risk_turn")) is not None and to_int(trace_row.get("first_concretization_turn")) is not None
+                    else None
+                ),
+                "persistence_gap": (
+                    to_int(trace_row.get("assistant_risk_turn")) - to_int(trace_row.get("first_persistence_turn"))
+                    if to_int(trace_row.get("assistant_risk_turn")) is not None and to_int(trace_row.get("first_persistence_turn")) is not None
+                    else None
+                ),
+                "assistant_block_type": str(risky.get("assistant_block_type") or ""),
+                "assistant_message_index": to_int(risky.get("assistant_message_index")),
+                "assistant_block_index": to_int(risky.get("assistant_block_index")),
+                "nearest_user_message_index": to_int(risky.get("nearest_user_message_index")),
+                "nearest_user_text_short": sanitize_text(str(risky.get("nearest_user_text_short") or "")),
+                "nearest_user_commands": "",
+                "assistant_candidate_text_short": sanitize_text(str(risky.get("assistant_candidate_text_short") or "")),
+                "assistant_candidate_preview": truncate(str(risky.get("assistant_candidate_text_short") or ""), 280),
+                "nearest_user_preview": truncate(str(risky.get("nearest_user_text_short") or ""), 220),
                 "dedup_count": to_int(str(risky.get("dedup_count") or "")) or 1,
-                "dedup_finding_ids": risky.get("dedup_finding_ids") or [row["finding_id"]],
-                "trajectory_context": build_stage_context(chat_path, row, risky),
+                "dedup_finding_ids": risky.get("dedup_finding_ids") or [str(risky["finding_id"])],
+                "trajectory_context": build_stage_context(chat_path, trace_row, risky),
             }
         )
 
@@ -625,12 +721,18 @@ def main() -> None:
     filtered = build_filtered_summaries()
     attr_summary = filtered["attr_summary"]
     traj_summary = filtered["traj_summary"]
-    findings = build_findings(filtered["risk_escalation_samples"], filtered["cwe_by_fid"], filtered["keep_fids"])
+    findings = build_findings(
+        filtered["risky_rows"],
+        filtered["candidate_rows"],
+        filtered["attr_by_candidate"],
+        filtered["trace_by_candidate"],
+    )
     payload = {
         "meta": {
             "title": "Vibe-Coding Risk Explorer",
-            "subtitle": "Interactive overview and drill-down for the full risky-row dataset",
-            "data_source": "analysis/output/risky_backtrace_all.csv",
+            "subtitle": "Interactive overview and drill-down for the gpt-5.4-mini deduped risky dataset",
+            "data_source": "analysis/output/judge_findings_all.jsonl + analysis/output/candidates_all.jsonl",
+            "dataset_version": "828",
         },
         "overview": build_overview(attr_summary, traj_summary),
         "insights": build_key_insights(attr_summary, traj_summary),

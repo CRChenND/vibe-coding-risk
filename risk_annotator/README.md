@@ -1,6 +1,6 @@
 # Risk Annotator
 
-This is a local manual review tool for the current risky dataset export. The UI now prefers `analysis/output/risk_dataset_export_828/` and falls back to older export directories if needed.
+This is a local manual review tool for the current risky dataset export at `analysis/output/risk_dataset_export_828/`.
 
 ## Run
 
