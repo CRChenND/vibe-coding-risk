@@ -14,16 +14,11 @@ from risk_dedup import dedup_risky_rows, load_candidate_repo_paths
 ROOT = Path(__file__).resolve().parents[2]
 RISKY_BACKTRACE = ROOT / "analysis/output/risky_backtrace_all.csv"
 RISKY_BACKTRACE_JSONL = ROOT / "analysis/output/risky_backtrace_all.jsonl"
-OUTPUT_PATH = ROOT / "risk_explorer/data/site_data.json"
+OUTPUT_PATH = ROOT / "risk_explorer/data/site_data_actionability.json"
 ATTR_ENRICHED = ROOT / "analysis/output/attribution_analysis_all/attribution_enriched.csv"
 CONV_TRACING = ROOT / "analysis/output/attribution_analysis_all/conversation_tracing.csv"
 CANDIDATES_ALL = ROOT / "analysis/output/candidates_all.jsonl"
-JUDGE_FINDINGS = ROOT / "analysis/output/judge_findings_all.jsonl"
-
-# One judge row is internally contradictory (`is_risky=true` but `verdict=not_risky`).
-# Keeping this exact high-confidence sample makes the gpt-5.4-mini deduped dataset
-# match the intended 828-row export used by the project.
-SPECIAL_INCLUDE_CANDIDATE_ID = "e9167e949fc33ca77206230a70228659679b6b75:19:1:0:command"
+JUDGE_FINDINGS = ROOT / "analysis/output/judge_findings_828_actionability_final.jsonl"
 
 CAUSE_ORDER = [
     "user_requested_risk",
@@ -225,11 +220,7 @@ def load_candidate_rows_by_id() -> dict[str, dict]:
 
 
 def should_include_judge_row(row: dict) -> bool:
-    verdict = str(row.get("verdict") or "").strip().lower()
-    if verdict != "not_risky":
-        return True
-    candidate_id = str(row.get("candidate_id") or "")
-    return candidate_id == SPECIAL_INCLUDE_CANDIDATE_ID
+    return bool(row.get("is_risky"))
 
 
 def load_deduped_judge_rows() -> tuple[list[dict], dict[str, dict], int]:
@@ -261,6 +252,8 @@ def load_deduped_judge_rows() -> tuple[list[dict], dict[str, dict], int]:
             row["nearest_user_text_short"] = str((candidate.get("metadata") or {}).get("preceding_user_text") or "")
             row["nearest_user_message_index"] = ""
             row["nearest_user_commands"] = ""
+            row["is_actionable"] = bool(obj.get("is_actionable"))
+            row["actionability_reason"] = str(obj.get("actionability_reason") or "")
             cwe = row.get("cwe")
             if isinstance(cwe, list):
                 row["cwe"] = ",".join(str(item) for item in cwe if str(item).strip())
@@ -271,6 +264,7 @@ def load_deduped_judge_rows() -> tuple[list[dict], dict[str, dict], int]:
 
 def build_filtered_summaries() -> dict[str, object]:
     risky_rows, candidate_rows, raw_risky_count = load_deduped_judge_rows()
+    judge_rows = load_jsonl(JUDGE_FINDINGS)
     keep_candidate_ids = {str(row.get("candidate_id") or "") for row in risky_rows}
 
     attr_by_candidate: dict[str, dict[str, str]] = {}
@@ -289,8 +283,12 @@ def build_filtered_summaries() -> dict[str, object]:
     }
 
     n_all_risky_rows = raw_risky_count
-    n_total_candidates = count_nonempty_lines(CANDIDATES_ALL)
+    n_total_candidates = len(judge_rows)
     n_risky_rows = len(risky_rows)
+    n_actionable = sum(bool(row.get("is_actionable")) for row in judge_rows)
+    n_non_actionable = n_total_candidates - n_actionable
+    n_not_risky_after_actionability = sum(not bool(row.get("is_risky")) for row in judge_rows)
+    n_risky_empty_cwe = sum(bool(row.get("is_risky")) and not (row.get("cwe") or []) for row in judge_rows)
 
     candidate_type_counts = Counter(str(row.get("candidate_id") or "").rsplit(":", 1)[-1] for row in risky_rows)
     attribution_distribution = Counter()
@@ -438,6 +436,13 @@ def build_filtered_summaries() -> dict[str, object]:
         },
         "top_cwe": [{"cwe": cwe, "count": count} for cwe, count in top_cwe_counter.most_common(15)],
         "audit": {"n_obvious_false_positives": 0, "n_local_only_context_rows": 0, "n_high_precision_rows": n_risky_rows, "high_precision_ratio_vs_code_risk": 1.0},
+        "actionability": {
+            "n_total_judged_rows": n_total_candidates,
+            "n_actionable": n_actionable,
+            "n_non_actionable": n_non_actionable,
+            "n_not_risky_after_actionability": n_not_risky_after_actionability,
+            "n_risky_empty_cwe": n_risky_empty_cwe,
+        },
     }
 
     traj_summary = {
@@ -565,6 +570,7 @@ def build_stage_context(chat_path: Path, row: dict[str, str], risky_row: dict[st
 def build_overview(attr_summary: dict, traj_summary: dict) -> dict:
     attr = attr_summary["attribution_distribution"]
     top_cwe = attr_summary["top_cwe"][0]
+    actionability = attr_summary["actionability"]
     return {
         "n_all_risky_rows": attr_summary["n_all_risky_rows"],
         "n_total_candidates": attr_summary["n_total_candidates"],
@@ -580,6 +586,10 @@ def build_overview(attr_summary: dict, traj_summary: dict) -> dict:
         "top_cwe_label": top_cwe["cwe"],
         "top_cwe_count": top_cwe["count"],
         "top_cwe_ratio": top_cwe["count"] / max(attr_summary["n_code_risk_rows"], 1),
+        "n_actionable": actionability["n_actionable"],
+        "n_non_actionable": actionability["n_non_actionable"],
+        "n_not_risky_after_actionability": actionability["n_not_risky_after_actionability"],
+        "n_risky_empty_cwe": actionability["n_risky_empty_cwe"],
     }
 
 
@@ -647,6 +657,8 @@ def build_findings(
                 "primary_cause": primary_cause,
                 "verdict": str(risky.get("verdict") or ""),
                 "confidence": to_float(risky.get("confidence")),
+                "is_actionable": bool(risky.get("is_actionable")),
+                "actionability_reason": sanitize_text(str(risky.get("actionability_reason") or "")),
                 "assistant_risk_turn": to_int(trace_row.get("assistant_risk_turn")),
                 "first_mention_turn": to_int(trace_row.get("first_mention_turn")),
                 "first_concretization_turn": to_int(trace_row.get("first_concretization_turn")),
@@ -730,9 +742,9 @@ def main() -> None:
     payload = {
         "meta": {
             "title": "Vibe-Coding Risk Explorer",
-            "subtitle": "Interactive overview and drill-down for the gpt-5.4-mini deduped risky dataset",
-            "data_source": "analysis/output/judge_findings_all.jsonl + analysis/output/candidates_all.jsonl",
-            "dataset_version": "828",
+            "subtitle": "Interactive overview and drill-down for the actionability-gated deduped risky dataset",
+            "data_source": "analysis/output/judge_findings_828_actionability_final.jsonl + analysis/output/candidates_all.jsonl",
+            "dataset_version": "828-actionability",
         },
         "overview": build_overview(attr_summary, traj_summary),
         "insights": build_key_insights(attr_summary, traj_summary),

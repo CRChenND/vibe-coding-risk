@@ -1,4 +1,4 @@
-const DATA_URL = "./data/site_data.json";
+const DATA_URL = "./data/site_data_actionability.json";
 const CWE_CATALOG_URL = "../analysis/output/cwe_catalog_full.json";
 
 const COLORS = {
@@ -298,13 +298,16 @@ function explainFinding(row) {
     .join(" ");
   const causePart =
     CAUSE_EXPLANATIONS[row.primary_cause] || "The attribution label explains where the risky direction most likely came from.";
+  const actionabilityPart = row.is_actionable
+    ? `The model treated this as actionable because ${String(row.actionability_reason || "the output looks directly usable in a real system").trim()}.`
+    : `The model treated this as non-actionable because ${String(row.actionability_reason || "the output is explanatory rather than directly deployable").trim()}.`;
   const severityPart =
     row.severity === "high"
       ? "This finding was judged high severity, so the risky behavior is considered directly important rather than merely cosmetic."
       : row.severity === "medium"
         ? "This finding was judged medium severity, meaning it is important but usually more context-dependent than the highest-severity cases."
         : "This finding was judged low severity, meaning it still matters but often depends on deployment context or follow-on misuse.";
-  return `${cwePart} ${causePart} ${severityPart}`;
+  return `${cwePart} ${causePart} ${actionabilityPart} ${severityPart}`;
 }
 
 function highlightRiskText(text) {
@@ -332,6 +335,7 @@ function extractRiskSignals(text) {
 function renderHeroMetrics(overview) {
   const mount = document.querySelector("#hero-metrics");
   const items = [
+    ["Retained Risk", fmtInt(overview.n_code_risk_rows)],
     ["Assistant-First", fmtPct(overview.assistant_first_ratio)],
     ["Early Emergence", fmtPct(overview.early_emergence_ratio)],
     ["Risk Gap p90", String(overview.risk_gap_p90)],
@@ -341,6 +345,7 @@ function renderHeroMetrics(overview) {
   mount.innerHTML = "";
   items.forEach(([label, value]) => {
     const tooltipMap = {
+      "Retained Risk": "Number of deduped rows currently retained in the explorer dataset.",
       "Assistant-First": "Share of findings where the risky direction is attributed mainly to the assistant rather than user/context.",
       "Early Emergence": "Share of traced findings whose first concrete risk signal appears in turns 0-1.",
       "Risk Gap p90": "90th percentile of the number of turns between first concrete risk signal and final risky assistant output.",
@@ -612,7 +617,7 @@ function summarizeCard(row) {
     title,
     context,
     snippet,
-    why,
+    why: row.actionability_reason ? `${why} Actionability: ${row.actionability_reason}` : why,
   };
 }
 
@@ -901,11 +906,12 @@ function safeOpenDrawer(row) {
         <p><strong>Error:</strong> ${escapeHtml(errorMessage)}</p>
       </div>
       <div class="detail-grid detail-grid-secondary">
-        <div class="detail-block">
+      <div class="detail-block">
           <h4>Classification</h4>
           <p><strong>CWE:</strong> ${escapeHtml(String(row.cwe || "-"))}</p>
           <p><strong>Cause:</strong> ${escapeHtml(String(row.primary_cause || "-"))}</p>
           <p><strong>Severity:</strong> ${escapeHtml(String(row.severity || "-"))}</p>
+          <p><strong>Actionable:</strong> ${row.is_actionable ? "yes" : "no"}</p>
         </div>
         <div class="detail-block">
           <h4>Context</h4>
@@ -949,6 +955,8 @@ function openDrawer(row) {
       <p><strong>Attribution Distribution:</strong> ${escapeHtml(attributionLabel)}</p>
       <p><strong>Attribution Family:</strong> ${escapeHtml(attributionFamily)}</p>
       <p><strong>Verdict:</strong> ${row.verdict} (${row.confidence ?? "n/a"})</p>
+      <p><strong>Actionable:</strong> ${row.is_actionable ? "yes" : "no"}</p>
+      <p><strong>Actionability Reason:</strong> ${escapeHtml(String(row.actionability_reason || "-"))}</p>
       <p><strong>Block Type:</strong> ${row.assistant_block_type}</p>
       <p><strong>Chat:</strong> <span class="mono">${row.chat_id}</span></p>
       <p><strong>Candidate:</strong> <span class="mono">${row.candidate_id}</span></p>

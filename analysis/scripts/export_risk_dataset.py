@@ -9,13 +9,13 @@ from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_OUT_DIR = ROOT / "analysis/output/risk_dataset_export_828"
-DEFAULT_SITE_DATA = ROOT / "risk_explorer/data/site_data.json"
+DEFAULT_OUT_DIR = ROOT / "analysis/output/risk_dataset_export_828_actionability"
+DEFAULT_SITE_DATA = ROOT / "risk_explorer/data/site_data_actionability.json"
 DEFAULT_RISKY_ROWS = ROOT / "analysis/output/risky_backtrace_all.csv"
 DEFAULT_ATTRIBUTION = ROOT / "analysis/output/attribution_analysis_all/attribution_enriched.csv"
 DEFAULT_TRACING = ROOT / "analysis/output/attribution_analysis_all/conversation_tracing.csv"
 DEFAULT_BACKTRACE = ROOT / "analysis/output/risky_backtrace_all.jsonl"
-DEFAULT_JUDGE_OUTPUT = ROOT / "analysis/output/judge_findings_all.jsonl"
+DEFAULT_JUDGE_OUTPUT = ROOT / "analysis/output/judge_findings_828_actionability_final.jsonl"
 DEFAULT_CHATS_DIR = ROOT / "data/chats"
 
 CWE_EXPLANATIONS = {

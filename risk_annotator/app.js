@@ -1,6 +1,6 @@
-const DATASET_VERSION_LABEL = "828";
+const DATASET_VERSION_LABEL = "828 Actionability";
 const DATASET_EXPORT_CANDIDATES = [
-  "../analysis/output/risk_dataset_export_828/",
+  "../analysis/output/risk_dataset_export_828_actionability/",
 ];
 const STORAGE_KEY = "vibe-risk-annotations-v1";
 const PAGE_SIZES = [20, 25, 50];

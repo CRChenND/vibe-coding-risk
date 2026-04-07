@@ -43,8 +43,7 @@
               <p class="section-kicker">Patterns</p>
               <h2>Attribution and CWE Mix <span class="term inline-term" data-tip="Attribution: who or what mainly introduced the risky direction. CWE mix: which weakness families appear most often.">?</span></h2>
               <p class="section-copy">
-                Assistant-side over-implementation dominates the high-precision subset, while a small set of CWE families
-                accounts for most retained risk.
+                This view now reflects the actionability-gated dataset, so explanatory or non-deployable cases are filtered out before the retained risk mix is summarized.
               </p>
             </div>
           </div>
@@ -53,14 +52,14 @@
               <h3>Attribution</h3>
               <div id="attribution-chart" class="chart"></div>
               <p class="chart-note">
-                Most retained findings are assistant-driven, especially through unnecessary risky expansion beyond the user's request.
+                Most retained findings are still assistant-driven, but only after non-actionable explanatory cases have been removed.
               </p>
             </div>
             <div class="chart-card">
               <h3>Top CWE</h3>
               <div id="top-cwe-chart" class="chart"></div>
               <p class="chart-note">
-                Plaintext secret exposure, injection-like behavior, and sensitive information leakage remain the most concentrated risk families.
+                Plaintext secret exposure and information disclosure remain concentrated, with some risky actionable cases now left unmapped when CWE fit is weak.
               </p>
             </div>
           </div>
@@ -72,7 +71,7 @@
               <p class="section-kicker">Patterns</p>
               <h2>Risk Emergence <span class="term inline-term" data-tip="Emergence asks when a risk first becomes concrete enough to count as a real risky implementation step.">?</span></h2>
               <p class="section-copy">
-                Risk often becomes concrete early, but a long conversational tail still matters.
+                In the actionability-gated slice, risk still often becomes concrete early, but persistence over later turns remains common.
               </p>
             </div>
           </div>
@@ -91,7 +90,7 @@
               <p class="section-kicker">Patterns</p>
               <h2>Attribution Source by CWE <span class="term inline-term" data-tip="For each weakness family, compare the share that is mostly assistant-driven versus user/context-driven.">?</span></h2>
               <p class="section-copy">
-                Different CWE families have different causal signatures: some are mostly assistant-generated, while others are mostly inherited from user or context material.
+                Different CWE families still have different causal signatures, but the remaining set is narrower because explanatory rows were dropped upstream.
               </p>
             </div>
           </div>
@@ -148,7 +147,7 @@
             <div>
               <h3>Start From a Guided View</h3>
               <p>
-                These entry points help you jump into common exploration paths instead of scanning the full dataset row by row.
+                These entry points help you jump into common exploration paths in the actionability-gated retained-risk set.
               </p>
             </div>
             <div id="preset-chips" class="preset-chips"></div>

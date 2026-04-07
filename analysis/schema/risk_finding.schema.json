@@ -22,6 +22,8 @@
       "enum": ["llm_judge", "static_rule", "dynamic_test", "fusion"]
     },
     "is_risky": {"type": "boolean"},
+    "is_actionable": {"type": "boolean"},
+    "actionability_reason": {"type": "string"},
     "severity": {
       "type": "string",
       "enum": ["none", "low", "medium", "high", "critical"]

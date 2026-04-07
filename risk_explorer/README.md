@@ -21,7 +21,7 @@ python3 analysis/scripts/build_risk_explorer_data.py
 This writes:
 
 ```text
-risk_explorer/data/site_data.json
+risk_explorer/data/site_data_actionability.json
 ```
 
 ## How To View Locally

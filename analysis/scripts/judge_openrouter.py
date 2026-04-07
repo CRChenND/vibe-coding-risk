@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 
@@ -35,6 +36,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--verify-prompt", type=Path, default=DEFAULT_VERIFY_PROMPT)
     p.add_argument("--catalog-cache", "--mitre-cache", dest="catalog_cache", type=Path, default=DEFAULT_CATALOG_CACHE)
     p.add_argument("--mitre-max-examples", type=int, default=2)
+    p.add_argument("--baseline", type=Path, default=None, help="Optional baseline findings JSONL to attach old_result comparison data.")
+    p.add_argument("--workers", type=int, default=1, help="Number of concurrent judge workers.")
     p.add_argument("--verify-cwe", dest="verify_cwe", action="store_true", default=True)
     p.add_argument("--no-verify-cwe", dest="verify_cwe", action="store_false")
     p.add_argument("--resume", dest="resume", action="store_true", default=True, help="Resume from existing output.")
@@ -97,12 +100,33 @@ def load_done_candidate_ids(out_file: Path) -> set[str]:
     return done
 
 
+def load_finding_rows(path: Path | None) -> dict[str, dict[str, Any]]:
+    rows: dict[str, dict[str, Any]] = {}
+    if path is None or not path.exists():
+        return rows
+    with path.open("rb") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                obj = orjson.loads(line)
+            except Exception:  # noqa: BLE001
+                continue
+            candidate_id = str(obj.get("candidate_id") or "")
+            if candidate_id:
+                rows[candidate_id] = obj
+    return rows
+
+
 def build_fallback(candidate_id: str, err: str) -> dict[str, Any]:
     return {
         "finding_id": sha256_text(f"llm_judge:{candidate_id}:{err}")[:24],
         "candidate_id": candidate_id,
         "analyzer": "llm_judge",
         "is_risky": False,
+        "is_actionable": False,
+        "actionability_reason": "Unavailable due to judge error.",
         "severity": "none",
         "confidence": 0.0,
         "cwe": [],
@@ -153,13 +177,27 @@ def normalize_finding(candidate_id: str, parsed: dict[str, Any], model: str) -> 
         fixed_evidence = [{"quote": "", "reason": "No evidence provided by judge."}]
 
     is_risky = bool(parsed.get("is_risky", False))
+    is_actionable = bool(parsed.get("is_actionable", False))
+    actionability_reason = str(parsed.get("actionability_reason", "")).strip()
     reasoning = str(parsed.get("reasoning", "")).strip()
+
+    # Keep top-level risk fields internally consistent even if the model emits
+    # contradictory combinations such as is_risky=true with verdict=not_risky.
+    if not is_actionable:
+        is_risky = False
+    if verdict == "not_risky" or severity == "none":
+        is_risky = False
+    if not is_risky:
+        severity = "none"
+        verdict = "not_risky"
 
     return {
         "finding_id": sha256_text(f"llm_judge:{candidate_id}:{model}")[:24],
         "candidate_id": candidate_id,
         "analyzer": "llm_judge",
         "is_risky": is_risky,
+        "is_actionable": is_actionable,
+        "actionability_reason": clip_text(actionability_reason, 300),
         "severity": severity,
         "confidence": confidence,
         "cwe": cwe,
@@ -180,6 +218,8 @@ def summarize_finding(finding: dict[str, Any]) -> dict[str, Any]:
         "candidate_id": finding.get("candidate_id"),
         "analyzer": finding.get("analyzer"),
         "is_risky": finding.get("is_risky"),
+        "is_actionable": finding.get("is_actionable"),
+        "actionability_reason": finding.get("actionability_reason"),
         "severity": finding.get("severity"),
         "confidence": finding.get("confidence"),
         "cwe": finding.get("cwe", []),
@@ -219,6 +259,101 @@ def build_verification_prompt(
         .replace("{{draft_finding_json}}", json.dumps(summarize_finding(draft_finding), ensure_ascii=False, indent=2))
         .replace("{{mitre_reference_pack_json}}", json.dumps(cwe_reference_pack, ensure_ascii=False, indent=2))
     )
+
+
+def judge_candidate(
+    candidate: dict[str, Any],
+    *,
+    api_key: str,
+    base_url: str,
+    model: str,
+    template: str,
+    verify_template: str,
+    verify_prompt_path: Path,
+    temperature: float,
+    max_tokens: int,
+    retries: int,
+    verify_cwe: bool,
+    catalog_cache: Path,
+    mitre_max_examples: int,
+    baseline_rows: dict[str, dict[str, Any]],
+) -> tuple[dict[str, Any], bool]:
+    candidate_id = str(candidate.get("candidate_id", "unknown"))
+    candidate_json = orjson.dumps(candidate, option=orjson.OPT_INDENT_2).decode("utf-8")
+    query_text = candidate_query_text(candidate)
+    prompt_text = template.replace("{{candidate_record_json}}", candidate_json)
+    last_err: Exception | None = None
+
+    with httpx.Client(base_url=base_url, timeout=120.0) as client:
+        for attempt in range(1, retries + 1):
+            try:
+                text = call_openrouter(
+                    client=client,
+                    api_key=api_key,
+                    model=model,
+                    prompt_text=prompt_text,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                )
+                parsed = parse_judge_json(text)
+                draft_finding = normalize_finding(candidate_id, parsed, model)
+
+                verification_payload: dict[str, Any] | None = None
+                final_parsed = parsed
+                if verify_cwe and draft_finding["verdict"] != "not_risky":
+                    draft_cwes = draft_finding["cwe"]
+                    reference_pack = build_reference_pack(
+                        draft_cwes,
+                        catalog_cache_path=catalog_cache,
+                        max_examples=max(1, mitre_max_examples),
+                        query_text=query_text + "\n" + str(draft_finding.get("details", {}).get("reasoning", "")),
+                        top_k=8,
+                    ) if draft_cwes else {}
+                    verify_prompt = build_verification_prompt(
+                        verify_template,
+                        candidate_json,
+                        draft_finding,
+                        reference_pack,
+                    )
+                    verify_text = call_openrouter(
+                        client=client,
+                        api_key=api_key,
+                        model=model,
+                        prompt_text=verify_prompt,
+                        temperature=temperature,
+                        max_tokens=max_tokens,
+                    )
+                    verified = parse_judge_json(verify_text)
+                    final_parsed = verified
+                    verification_payload = {
+                        "mode": "mitre_cwe_verify",
+                        "draft": summarize_finding(draft_finding),
+                        "reference_pack": reference_pack,
+                        "verify_prompt": str(verify_prompt_path),
+                        "revised": split_cwe_values(verified.get("cwe", [])) != draft_finding["cwe"],
+                    }
+
+                finding = normalize_finding(candidate_id, final_parsed, model)
+                if verification_payload is not None:
+                    finding["details"]["verification"] = verification_payload
+                    finding["details"]["draft"] = summarize_finding(draft_finding)
+                comparison: dict[str, Any] = {
+                    "new_result": summarize_finding(finding),
+                    "is_actionable": finding["is_actionable"],
+                }
+                baseline_row = baseline_rows.get(candidate_id)
+                if baseline_row:
+                    comparison["old_result"] = summarize_finding(baseline_row)
+                finding["details"]["comparison"] = comparison
+                return finding, True
+            except Exception as exc:  # noqa: BLE001
+                last_err = exc
+                if attempt < retries:
+                    time.sleep(min(1.5 * attempt, 5.0))
+
+    fallback = build_fallback(candidate_id, str(last_err))
+    fallback["details"]["model"] = model
+    return fallback, False
 
 
 def call_openrouter(
@@ -291,6 +426,7 @@ def main() -> None:
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
     done_ids = load_done_candidate_ids(args.out) if args.resume else set()
+    baseline_rows = load_finding_rows(args.baseline)
 
     count_ok = 0
     count_err = 0
@@ -298,94 +434,77 @@ def main() -> None:
 
     mode = "ab" if args.resume else "wb"
 
-    with httpx.Client(base_url=base_url, timeout=120.0) as client:
-        with args.out.open(mode) as wf:
-            for line in tqdm(raw_lines, desc="llm-judge"):
-                if not line.strip():
-                    continue
-                candidate = orjson.loads(line)
-                candidate_id = str(candidate.get("candidate_id", "unknown"))
-                if candidate_id in done_ids:
-                    count_skip += 1
-                    continue
-                candidate_json = orjson.dumps(candidate, option=orjson.OPT_INDENT_2).decode("utf-8")
-                query_text = candidate_query_text(candidate)
-                prompt_text = template.replace("{{candidate_record_json}}", candidate_json)
+    pending_candidates: list[dict[str, Any]] = []
+    for line in raw_lines:
+        if not line.strip():
+            continue
+        candidate = orjson.loads(line)
+        candidate_id = str(candidate.get("candidate_id", "unknown"))
+        if candidate_id in done_ids:
+            count_skip += 1
+            continue
+        pending_candidates.append(candidate)
 
-                last_err: Exception | None = None
-                for attempt in range(1, args.retries + 1):
-                    try:
-                        text = call_openrouter(
-                            client=client,
-                            api_key=api_key,
-                            model=args.model,
-                            prompt_text=prompt_text,
-                            temperature=args.temperature,
-                            max_tokens=args.max_tokens,
-                        )
-                        parsed = parse_judge_json(text)
-                        draft_finding = normalize_finding(candidate_id, parsed, args.model)
-
-                        verification_payload: dict[str, Any] | None = None
-                        final_parsed = parsed
-                        if args.verify_cwe and draft_finding["verdict"] != "not_risky":
-                            reference_pack = build_reference_pack(
-                                draft_finding["cwe"],
-                                catalog_cache_path=args.catalog_cache,
-                                max_examples=max(1, args.mitre_max_examples),
-                                query_text=query_text + "\n" + str(draft_finding.get("details", {}).get("reasoning", "")),
-                                top_k=8,
-                            )
-                            verify_prompt = build_verification_prompt(
-                                verify_template,
-                                candidate_json,
-                                draft_finding,
-                                reference_pack,
-                            )
-                            verify_text = call_openrouter(
-                                client=client,
-                                api_key=api_key,
-                                model=args.model,
-                                prompt_text=verify_prompt,
-                                temperature=args.temperature,
-                                max_tokens=args.max_tokens,
-                            )
-                            verified = parse_judge_json(verify_text)
-                            final_parsed = verified
-                            verification_payload = {
-                                "mode": "mitre_cwe_verify",
-                                "draft": summarize_finding(draft_finding),
-                                "reference_pack": reference_pack,
-                                "verify_prompt": str(args.verify_prompt),
-                            }
-                            if split_cwe_values(verified.get("cwe", [])) != draft_finding["cwe"]:
-                                verification_payload["revised"] = True
-                            else:
-                                verification_payload["revised"] = False
-
-                        finding = normalize_finding(candidate_id, final_parsed, args.model)
-                        if verification_payload is not None:
-                            finding["details"]["verification"] = verification_payload
-                            finding["details"]["draft"] = summarize_finding(draft_finding)
-                        wf.write(orjson.dumps(finding) + b"\n")
-                        count_ok += 1
-                        done_ids.add(candidate_id)
-                        last_err = None
-                        break
-                    except Exception as exc:  # noqa: BLE001
-                        last_err = exc
-                        if attempt < args.retries:
-                            time.sleep(min(1.5 * attempt, 5.0))
-
-                if last_err is not None:
+    with args.out.open(mode) as wf:
+        if max(1, args.workers) == 1:
+            for candidate in tqdm(pending_candidates, desc="llm-judge"):
+                finding, ok = judge_candidate(
+                    candidate,
+                    api_key=api_key,
+                    base_url=base_url,
+                    model=args.model,
+                    template=template,
+                    verify_template=verify_template,
+                    verify_prompt_path=args.verify_prompt,
+                    temperature=args.temperature,
+                    max_tokens=args.max_tokens,
+                    retries=args.retries,
+                    verify_cwe=args.verify_cwe,
+                    catalog_cache=args.catalog_cache,
+                    mitre_max_examples=args.mitre_max_examples,
+                    baseline_rows=baseline_rows,
+                )
+                wf.write(orjson.dumps(finding) + b"\n")
+                done_ids.add(str(candidate.get("candidate_id", "unknown")))
+                if ok:
+                    count_ok += 1
+                else:
                     count_err += 1
-                    fallback = build_fallback(candidate_id, str(last_err))
-                    fallback["details"]["model"] = args.model
-                    wf.write(orjson.dumps(fallback) + b"\n")
-                    done_ids.add(candidate_id)
-
                 if args.sleep > 0:
                     time.sleep(args.sleep)
+        else:
+            with ThreadPoolExecutor(max_workers=max(1, args.workers)) as executor:
+                futures = {
+                    executor.submit(
+                        judge_candidate,
+                        candidate,
+                        api_key=api_key,
+                        base_url=base_url,
+                        model=args.model,
+                        template=template,
+                        verify_template=verify_template,
+                        verify_prompt_path=args.verify_prompt,
+                        temperature=args.temperature,
+                        max_tokens=args.max_tokens,
+                        retries=args.retries,
+                        verify_cwe=args.verify_cwe,
+                        catalog_cache=args.catalog_cache,
+                        mitre_max_examples=args.mitre_max_examples,
+                        baseline_rows=baseline_rows,
+                    ): str(candidate.get("candidate_id", "unknown"))
+                    for candidate in pending_candidates
+                }
+                for future in tqdm(as_completed(futures), total=len(futures), desc="llm-judge"):
+                    candidate_id = futures[future]
+                    finding, ok = future.result()
+                    wf.write(orjson.dumps(finding) + b"\n")
+                    done_ids.add(candidate_id)
+                    if ok:
+                        count_ok += 1
+                    else:
+                        count_err += 1
+                    if args.sleep > 0:
+                        time.sleep(args.sleep)
 
     print(f"Candidates seen: {len(raw_lines)}")
     print(f"Candidates skipped(resume): {count_skip}")
