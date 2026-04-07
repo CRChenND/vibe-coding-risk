@@ -85,17 +85,17 @@ This writes:
 
 The repo includes two local websites:
 
-- `risk_annotator/`: manual review UI for the current deduped `828`-row dataset
-- `risk_explorer/`: read-only explorer for the same dataset with aggregate charts and finding drill-down
+- `risk_annotator/`: manual review UI for the current actionability-gated retained-risk export
+- `risk_explorer/`: read-only explorer for the same retained-risk dataset with aggregate charts and finding drill-down
 
 Required files:
 
 - For `risk_annotator`:
-  - `analysis/output/risk_dataset_export_828/manifest.json`
-  - `analysis/output/risk_dataset_export_828/risk_dataset.csv`
-  - `analysis/output/risk_dataset_export_828/source_files/*.json`
+  - `analysis/output/risk_dataset_export_828_actionability/manifest.json`
+  - `analysis/output/risk_dataset_export_828_actionability/risk_dataset.csv`
+  - `analysis/output/risk_dataset_export_828_actionability/source_files/*.json`
 - For `risk_explorer`:
-  - `risk_explorer/data/site_data.json`
+  - `risk_explorer/data/site_data_actionability.json`
   - `analysis/output/cwe_catalog_full.json`
 
 If you need to rebuild the UI data:
