@@ -1,0 +1,171 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "risk_episode.schema.json",
+  "title": "RiskEpisode",
+  "type": "object",
+  "required": [
+    "episode_id",
+    "chat_id",
+    "finding_ids",
+    "candidate_ids",
+    "risk_lineage_id",
+    "lineage_role",
+    "risk_turn_index",
+    "episode_window",
+    "interaction_stage",
+    "risk_origin",
+    "mechanism",
+    "risk_evolution",
+    "user_reaction",
+    "confidence_tier",
+    "cwe_ids",
+    "primary_cwe",
+    "cwe_abstraction",
+    "cwe_specificity",
+    "needs_human_cwe_review",
+    "risk_summary",
+    "evidence_turns",
+    "evidence_quotes",
+    "human_verified",
+    "human_notes"
+  ],
+  "properties": {
+    "episode_id": {"type": "string"},
+    "chat_id": {"type": "string"},
+    "finding_ids": {
+      "type": "array",
+      "items": {"type": "string"},
+      "minItems": 1
+    },
+    "candidate_ids": {
+      "type": "array",
+      "items": {"type": "string"},
+      "minItems": 1
+    },
+    "risk_lineage_id": {"type": "string"},
+    "lineage_role": {
+      "type": "string",
+      "enum": ["introduced", "propagated", "reintroduced", "fixed", "unknown"]
+    },
+    "risk_turn_index": {"type": "integer", "minimum": 0},
+    "episode_window": {
+      "type": "object",
+      "required": ["start_turn", "end_turn"],
+      "properties": {
+        "start_turn": {"type": "integer", "minimum": 0},
+        "end_turn": {"type": "integer", "minimum": 0}
+      },
+      "additionalProperties": false
+    },
+    "interaction_stage": {
+      "type": "string",
+      "enum": [
+        "initial_generation",
+        "repair_debugging",
+        "optimization_refactor",
+        "feature_expansion",
+        "dependency_installation",
+        "deployment_configuration",
+        "security_fix",
+        "unknown"
+      ]
+    },
+    "risk_origin": {
+      "type": "string",
+      "enum": [
+        "user_induced",
+        "agent_induced",
+        "repair_induced",
+        "context_loss_induced",
+        "tool_or_retrieval_induced",
+        "ambiguity_induced",
+        "mixed",
+        "unknown"
+      ]
+    },
+    "mechanism": {
+      "type": "string",
+      "enum": [
+        "validation_removal",
+        "unsafe_default",
+        "hardcoded_secret",
+        "insecure_deserialization",
+        "raw_query_construction",
+        "command_injection_pattern",
+        "disabled_tls_or_auth",
+        "overbroad_permission",
+        "dangerous_shell_command",
+        "hallucinated_secure_api",
+        "unsafe_dependency_recommendation",
+        "partial_fix",
+        "security_requirement_omission",
+        "unknown"
+      ]
+    },
+    "risk_evolution": {
+      "type": "string",
+      "enum": [
+        "introduced",
+        "persisted",
+        "amplified",
+        "partially_fixed",
+        "fully_fixed",
+        "reintroduced",
+        "propagated",
+        "unknown"
+      ]
+    },
+    "user_reaction": {
+      "type": "string",
+      "enum": [
+        "accepted_without_questioning",
+        "questioned_security",
+        "requested_fix",
+        "executed_or_planned_execution",
+        "ignored",
+        "unknown"
+      ]
+    },
+    "confidence_tier": {
+      "type": "string",
+      "enum": ["high", "medium", "low", "excluded"]
+    },
+    "cwe_ids": {
+      "type": "array",
+      "items": {"type": "string", "pattern": "^CWE-[0-9]+$"}
+    },
+    "primary_cwe": {"type": ["string", "null"], "pattern": "^CWE-[0-9]+$"},
+    "cwe_abstraction": {
+      "type": ["string", "null"],
+      "enum": ["Pillar", "Class", "Base", "Variant", "Compound", "Category", "", null]
+    },
+    "cwe_specificity": {
+      "type": "string",
+      "enum": ["specific", "broad", "ambiguous", "unmapped"]
+    },
+    "needs_human_cwe_review": {"type": "boolean"},
+    "risk_summary": {"type": "string"},
+    "evidence_turns": {
+      "type": "array",
+      "items": {"type": "integer", "minimum": 0}
+    },
+    "evidence_quotes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["turn_index", "role", "quote", "why_relevant"],
+        "properties": {
+          "turn_index": {"type": "integer", "minimum": 0},
+          "role": {"type": "string", "enum": ["user", "assistant", "tool"]},
+          "quote": {"type": "string"},
+          "why_relevant": {"type": "string"}
+        },
+        "additionalProperties": false
+      }
+    },
+    "human_verified": {"type": ["boolean", "null"]},
+    "human_notes": {"type": ["string", "null"]},
+    "details": {"type": "object"}
+  },
+  "additionalProperties": false
+}

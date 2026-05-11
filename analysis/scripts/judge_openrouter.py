@@ -37,6 +37,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--catalog-cache", "--mitre-cache", dest="catalog_cache", type=Path, default=DEFAULT_CATALOG_CACHE)
     p.add_argument("--mitre-max-examples", type=int, default=2)
     p.add_argument("--baseline", type=Path, default=None, help="Optional baseline findings JSONL to attach old_result comparison data.")
+    p.add_argument("--cwe-candidates", type=Path, default=None, help="Optional constrained CWE options JSONL from build_cwe_candidates.py.")
     p.add_argument("--workers", type=int, default=1, help="Number of concurrent judge workers.")
     p.add_argument("--verify-cwe", dest="verify_cwe", action="store_true", default=True)
     p.add_argument("--no-verify-cwe", dest="verify_cwe", action="store_false")
@@ -130,6 +131,14 @@ def build_fallback(candidate_id: str, err: str) -> dict[str, Any]:
         "severity": "none",
         "confidence": 0.0,
         "cwe": [],
+        "cwe_ids": [],
+        "primary_cwe": None,
+        "cwe_abstraction": None,
+        "cwe_candidates_considered": [],
+        "rejected_cwes": [],
+        "cwe_confidence": 0.0,
+        "cwe_specificity": "unmapped",
+        "needs_human_cwe_review": False,
         "evidence": [
             {
                 "quote": "",
@@ -142,7 +151,107 @@ def build_fallback(candidate_id: str, err: str) -> dict[str, Any]:
     }
 
 
-def normalize_finding(candidate_id: str, parsed: dict[str, Any], model: str) -> dict[str, Any]:
+def load_cwe_candidate_rows(path: Path | None) -> dict[str, dict[str, Any]]:
+    rows: dict[str, dict[str, Any]] = {}
+    if path is None or not path.exists():
+        return rows
+    with path.open("rb") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            obj = orjson.loads(line)
+            cid = str(obj.get("candidate_id") or "")
+            if cid:
+                rows[cid] = obj
+    return rows
+
+
+def cwe_options_for_prompt(row: dict[str, Any] | None) -> list[dict[str, Any]]:
+    if not row:
+        return []
+    options = row.get("candidate_cwe_options")
+    if not isinstance(options, list):
+        return []
+    out: list[dict[str, Any]] = []
+    for option in options:
+        if not isinstance(option, dict):
+            continue
+        cwe = str(option.get("cwe") or "")
+        if not cwe:
+            continue
+        out.append(
+            {
+                "cwe": cwe,
+                "title": option.get("title") or option.get("name") or cwe,
+                "abstraction": option.get("abstraction") or "",
+                "description": clip_text(str(option.get("description") or ""), 400),
+                "sources": option.get("sources") or [],
+                "reasons": option.get("reasons") or [],
+            }
+        )
+    return out
+
+
+def allowed_cwes(cwe_candidate_row: dict[str, Any] | None) -> set[str]:
+    return {
+        str(option.get("cwe"))
+        for option in cwe_options_for_prompt(cwe_candidate_row)
+        if option.get("cwe")
+    }
+
+
+def candidate_abstraction(cwe: str | None, cwe_candidate_row: dict[str, Any] | None) -> str | None:
+    if not cwe:
+        return None
+    for option in cwe_options_for_prompt(cwe_candidate_row):
+        if option.get("cwe") == cwe:
+            abstraction = str(option.get("abstraction") or "")
+            return abstraction or None
+    return None
+
+
+def constrained_cwes(parsed: dict[str, Any], cwe_candidate_row: dict[str, Any] | None) -> tuple[list[str], bool]:
+    raw_values: list[Any] = []
+    primary = parsed.get("primary_cwe")
+    if isinstance(primary, str):
+        raw_values.append(primary)
+    raw_values.extend(split_cwe_values(parsed.get("cwe_ids", [])))
+    raw_values.extend(split_cwe_values(parsed.get("cwe", [])))
+    proposed = split_cwe_values(raw_values)
+    if cwe_candidate_row is None:
+        return proposed, False
+    allowed = allowed_cwes(cwe_candidate_row)
+    if not allowed:
+        return [], bool(proposed)
+    filtered = [cwe for cwe in proposed if cwe in allowed]
+    return filtered, bool(set(proposed) - allowed)
+
+
+def normalize_rejected_cwes(raw: Any, cwe_candidate_row: dict[str, Any] | None) -> list[dict[str, str]]:
+    allowed = allowed_cwes(cwe_candidate_row)
+    out: list[dict[str, str]] = []
+    if not isinstance(raw, list):
+        return out
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        cwe_values = split_cwe_values(item.get("cwe"))
+        if not cwe_values:
+            continue
+        cwe = cwe_values[0]
+        if allowed and cwe not in allowed:
+            continue
+        out.append({"cwe": cwe, "reason": clip_text(str(item.get("reason") or ""), 300)})
+    return out
+
+
+def normalize_finding(
+    candidate_id: str,
+    parsed: dict[str, Any],
+    model: str,
+    cwe_candidate_row: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     severity = str(parsed.get("severity", "none")).lower()
     if severity not in {"none", "low", "medium", "high", "critical"}:
         severity = "none"
@@ -158,7 +267,17 @@ def normalize_finding(candidate_id: str, parsed: dict[str, Any], model: str) -> 
         confidence = 0.0
     confidence = max(0.0, min(1.0, confidence))
 
-    cwe = split_cwe_values(parsed.get("cwe", []))
+    cwe, rejected_out_of_set = constrained_cwes(parsed, cwe_candidate_row)
+    primary_cwe = cwe[0] if cwe else None
+    cwe_confidence = parsed.get("cwe_confidence", parsed.get("confidence", 0.0))
+    try:
+        cwe_confidence = float(cwe_confidence)
+    except (TypeError, ValueError):
+        cwe_confidence = 0.0
+    cwe_confidence = max(0.0, min(1.0, cwe_confidence))
+    cwe_specificity = str(parsed.get("cwe_specificity") or ("specific" if primary_cwe else "unmapped")).lower()
+    if cwe_specificity not in {"specific", "broad", "ambiguous", "unmapped"}:
+        cwe_specificity = "ambiguous"
 
     evidence = parsed.get("evidence", [])
     if not isinstance(evidence, list):
@@ -190,6 +309,14 @@ def normalize_finding(candidate_id: str, parsed: dict[str, Any], model: str) -> 
     if not is_risky:
         severity = "none"
         verdict = "not_risky"
+        cwe = []
+        primary_cwe = None
+        cwe_confidence = 0.0
+        cwe_specificity = "unmapped"
+
+    needs_human_cwe_review = bool(parsed.get("needs_human_cwe_review", False))
+    if rejected_out_of_set or (is_risky and not cwe):
+        needs_human_cwe_review = True
 
     return {
         "finding_id": sha256_text(f"llm_judge:{candidate_id}:{model}")[:24],
@@ -201,12 +328,26 @@ def normalize_finding(candidate_id: str, parsed: dict[str, Any], model: str) -> 
         "severity": severity,
         "confidence": confidence,
         "cwe": cwe,
+        "cwe_ids": cwe,
+        "primary_cwe": primary_cwe,
+        "cwe_abstraction": candidate_abstraction(primary_cwe, cwe_candidate_row),
+        "cwe_candidates_considered": sorted(allowed_cwes(cwe_candidate_row)),
+        "rejected_cwes": normalize_rejected_cwes(parsed.get("rejected_cwes", []), cwe_candidate_row),
+        "cwe_confidence": cwe_confidence,
+        "cwe_specificity": cwe_specificity,
+        "needs_human_cwe_review": needs_human_cwe_review,
         "evidence": fixed_evidence,
         "verdict": verdict,
         "rule_id": None,
         "details": {
             "model": model,
             "reasoning": reasoning,
+            "cwe_candidate_options": cwe_options_for_prompt(cwe_candidate_row),
+            "cwe_constraint": {
+                "enabled": cwe_candidate_row is not None,
+                "rejected_out_of_set": rejected_out_of_set,
+                "semgrep_matched": bool((cwe_candidate_row or {}).get("semgrep_matched")),
+            },
         },
     }
 
@@ -223,6 +364,11 @@ def summarize_finding(finding: dict[str, Any]) -> dict[str, Any]:
         "severity": finding.get("severity"),
         "confidence": finding.get("confidence"),
         "cwe": finding.get("cwe", []),
+        "primary_cwe": finding.get("primary_cwe"),
+        "cwe_abstraction": finding.get("cwe_abstraction"),
+        "cwe_confidence": finding.get("cwe_confidence"),
+        "cwe_specificity": finding.get("cwe_specificity"),
+        "needs_human_cwe_review": finding.get("needs_human_cwe_review"),
         "verdict": finding.get("verdict"),
         "reasoning": details.get("reasoning", ""),
     }
@@ -253,11 +399,13 @@ def build_verification_prompt(
     candidate_json: str,
     draft_finding: dict[str, Any],
     cwe_reference_pack: dict[str, dict[str, Any]],
+    cwe_candidate_options: list[dict[str, Any]],
 ) -> str:
     return (
         template.replace("{{candidate_record_json}}", candidate_json)
         .replace("{{draft_finding_json}}", json.dumps(summarize_finding(draft_finding), ensure_ascii=False, indent=2))
         .replace("{{mitre_reference_pack_json}}", json.dumps(cwe_reference_pack, ensure_ascii=False, indent=2))
+        .replace("{{candidate_cwe_options_json}}", json.dumps(cwe_candidate_options, ensure_ascii=False, indent=2))
     )
 
 
@@ -277,11 +425,17 @@ def judge_candidate(
     catalog_cache: Path,
     mitre_max_examples: int,
     baseline_rows: dict[str, dict[str, Any]],
+    cwe_candidate_rows: dict[str, dict[str, Any]],
 ) -> tuple[dict[str, Any], bool]:
     candidate_id = str(candidate.get("candidate_id", "unknown"))
+    cwe_candidate_row = cwe_candidate_rows.get(candidate_id)
     candidate_json = orjson.dumps(candidate, option=orjson.OPT_INDENT_2).decode("utf-8")
     query_text = candidate_query_text(candidate)
-    prompt_text = template.replace("{{candidate_record_json}}", candidate_json)
+    cwe_options = cwe_options_for_prompt(cwe_candidate_row)
+    prompt_text = (
+        template.replace("{{candidate_record_json}}", candidate_json)
+        .replace("{{candidate_cwe_options_json}}", json.dumps(cwe_options, ensure_ascii=False, indent=2))
+    )
     last_err: Exception | None = None
 
     with httpx.Client(base_url=base_url, timeout=120.0) as client:
@@ -296,7 +450,7 @@ def judge_candidate(
                     max_tokens=max_tokens,
                 )
                 parsed = parse_judge_json(text)
-                draft_finding = normalize_finding(candidate_id, parsed, model)
+                draft_finding = normalize_finding(candidate_id, parsed, model, cwe_candidate_row)
 
                 verification_payload: dict[str, Any] | None = None
                 final_parsed = parsed
@@ -314,6 +468,7 @@ def judge_candidate(
                         candidate_json,
                         draft_finding,
                         reference_pack,
+                        cwe_options,
                     )
                     verify_text = call_openrouter(
                         client=client,
@@ -333,7 +488,7 @@ def judge_candidate(
                         "revised": split_cwe_values(verified.get("cwe", [])) != draft_finding["cwe"],
                     }
 
-                finding = normalize_finding(candidate_id, final_parsed, model)
+                finding = normalize_finding(candidate_id, final_parsed, model, cwe_candidate_row)
                 if verification_payload is not None:
                     finding["details"]["verification"] = verification_payload
                     finding["details"]["draft"] = summarize_finding(draft_finding)
@@ -427,6 +582,7 @@ def main() -> None:
     args.out.parent.mkdir(parents=True, exist_ok=True)
     done_ids = load_done_candidate_ids(args.out) if args.resume else set()
     baseline_rows = load_finding_rows(args.baseline)
+    cwe_candidate_rows = load_cwe_candidate_rows(args.cwe_candidates)
 
     count_ok = 0
     count_err = 0
@@ -463,6 +619,7 @@ def main() -> None:
                     catalog_cache=args.catalog_cache,
                     mitre_max_examples=args.mitre_max_examples,
                     baseline_rows=baseline_rows,
+                    cwe_candidate_rows=cwe_candidate_rows,
                 )
                 wf.write(orjson.dumps(finding) + b"\n")
                 done_ids.add(str(candidate.get("candidate_id", "unknown")))
@@ -491,6 +648,7 @@ def main() -> None:
                         catalog_cache=args.catalog_cache,
                         mitre_max_examples=args.mitre_max_examples,
                         baseline_rows=baseline_rows,
+                        cwe_candidate_rows=cwe_candidate_rows,
                     ): str(candidate.get("candidate_id", "unknown"))
                     for candidate in pending_candidates
                 }

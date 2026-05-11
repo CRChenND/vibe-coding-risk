@@ -10,6 +10,10 @@
     "platform",
     "timestamp",
     "message_index",
+    "turn_index",
+    "message_id",
+    "role",
+    "parent_chat_id",
     "block_index",
     "candidate_type",
     "content",
@@ -23,6 +27,13 @@
     "platform": {"type": ["string", "null"]},
     "timestamp": {"type": ["string", "null"]},
     "message_index": {"type": "integer", "minimum": 0},
+    "turn_index": {"type": "integer", "minimum": 0},
+    "message_id": {"type": "string"},
+    "role": {
+      "type": "string",
+      "enum": ["assistant"]
+    },
+    "parent_chat_id": {"type": ["string", "null"]},
     "block_index": {"type": "integer", "minimum": 0},
     "candidate_type": {
       "type": "string",

@@ -128,6 +128,10 @@ def build_candidate(
     platform: str | None,
     timestamp: str | None,
     message_index: int,
+    turn_index: int,
+    message_id: str,
+    role: str,
+    parent_chat_id: str | None,
     block_index: int,
     candidate_idx: int,
     candidate_type: str,
@@ -151,6 +155,10 @@ def build_candidate(
         "platform": platform,
         "timestamp": timestamp,
         "message_index": message_index,
+        "turn_index": turn_index,
+        "message_id": message_id,
+        "role": role,
+        "parent_chat_id": parent_chat_id,
         "block_index": block_index,
         "candidate_type": candidate_type,
         "language_hint": language_hint,
@@ -175,6 +183,9 @@ def extract_from_chat(chat_path: Path) -> list[dict[str, Any]]:
     messages = data.get("messages") or []
     platform = data.get("platform")
     timestamp = data.get("timestamp")
+    parent_chat_id = data.get("parent_chat_id") or data.get("parent_id")
+    if parent_chat_id is not None:
+        parent_chat_id = str(parent_chat_id)
     chat_id = chat_path.name.replace(".md.json", "")
 
     candidates: list[dict[str, Any]] = []
@@ -182,6 +193,7 @@ def extract_from_chat(chat_path: Path) -> list[dict[str, Any]]:
 
     for mi, msg in enumerate(messages):
         role = str(msg.get("role", "")).strip().lower()
+        message_id = str(msg.get("id") or msg.get("message_id") or f"{chat_id}:{mi}")
         blocks = flatten_blocks(msg.get("blocks"))
 
         if role == "user":
@@ -216,6 +228,10 @@ def extract_from_chat(chat_path: Path) -> list[dict[str, Any]]:
                         platform=platform,
                         timestamp=timestamp,
                         message_index=mi,
+                        turn_index=mi,
+                        message_id=message_id,
+                        role=role,
+                        parent_chat_id=parent_chat_id,
                         block_index=bi,
                         candidate_idx=local_idx,
                         candidate_type="command",
@@ -237,6 +253,10 @@ def extract_from_chat(chat_path: Path) -> list[dict[str, Any]]:
                         platform=platform,
                         timestamp=timestamp,
                         message_index=mi,
+                        turn_index=mi,
+                        message_id=message_id,
+                        role=role,
+                        parent_chat_id=parent_chat_id,
                         block_index=bi,
                         candidate_idx=local_idx,
                         candidate_type="code_snippet",
@@ -264,6 +284,10 @@ def extract_from_chat(chat_path: Path) -> list[dict[str, Any]]:
                         platform=platform,
                         timestamp=timestamp,
                         message_index=mi,
+                        turn_index=mi,
+                        message_id=message_id,
+                        role=role,
+                        parent_chat_id=parent_chat_id,
                         block_index=bi,
                         candidate_idx=local_idx,
                         candidate_type="code_snippet",

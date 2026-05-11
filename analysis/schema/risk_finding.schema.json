@@ -17,6 +17,8 @@
   "properties": {
     "finding_id": {"type": "string"},
     "candidate_id": {"type": "string"},
+    "chat_id": {"type": "string"},
+    "turn_index": {"type": ["integer", "null"], "minimum": 0},
     "analyzer": {
       "type": "string",
       "enum": ["llm_judge", "static_rule", "dynamic_test", "fusion"]
@@ -29,21 +31,73 @@
       "enum": ["none", "low", "medium", "high", "critical"]
     },
     "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+    "confidence_tier": {
+      "type": "string",
+      "enum": ["high", "medium", "low", "excluded"]
+    },
     "cwe": {
       "type": "array",
       "items": {"type": "string", "pattern": "^CWE-[0-9]+$"}
     },
-    "evidence": {
+    "cwe_ids": {
+      "type": "array",
+      "items": {"type": "string", "pattern": "^CWE-[0-9]+$"}
+    },
+    "primary_cwe": {"type": ["string", "null"], "pattern": "^CWE-[0-9]+$"},
+    "cwe_abstraction": {
+      "type": ["string", "null"],
+      "enum": ["Pillar", "Class", "Base", "Variant", "Compound", "Category", "" , null]
+    },
+    "cwe_candidates_considered": {
+      "type": "array",
+      "items": {"type": "string", "pattern": "^CWE-[0-9]+$"}
+    },
+    "rejected_cwes": {
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["quote", "reason"],
+        "required": ["cwe", "reason"],
         "properties": {
-          "quote": {"type": "string"},
+          "cwe": {"type": "string", "pattern": "^CWE-[0-9]+$"},
           "reason": {"type": "string"}
         },
         "additionalProperties": false
       }
+    },
+    "cwe_confidence": {"type": "number", "minimum": 0, "maximum": 1},
+    "cwe_specificity": {
+      "type": "string",
+      "enum": ["specific", "broad", "ambiguous", "unmapped"]
+    },
+    "needs_human_cwe_review": {"type": "boolean"},
+    "analyzers": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "agreement": {
+      "type": "string",
+      "enum": ["semgrep_only", "llm_judge_only", "both", "unknown"]
+    },
+    "source_finding_ids": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "evidence": {
+      "oneOf": [
+        {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["quote", "reason"],
+            "properties": {
+              "quote": {"type": "string"},
+              "reason": {"type": "string"}
+            },
+            "additionalProperties": false
+          }
+        },
+        {"type": "object"}
+      ]
     },
     "verdict": {
       "type": "string",
