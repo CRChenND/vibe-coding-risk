@@ -14,8 +14,7 @@
     "candidate_type",
     "content",
     "content_hash",
-    "attribution",
-    "repo_context"
+    "attribution"
   ],
   "properties": {
     "candidate_id": {"type": "string"},
@@ -27,7 +26,7 @@
     "block_index": {"type": "integer", "minimum": 0},
     "candidate_type": {
       "type": "string",
-      "enum": ["code_snippet", "command", "security_advice"]
+      "enum": ["code_snippet", "command"]
     },
     "language_hint": {"type": ["string", "null"]},
     "content": {"type": "string", "minLength": 1},
@@ -35,16 +34,6 @@
     "attribution": {
       "type": "string",
       "enum": ["generated", "copied_from_repo", "execution_log", "unclear"]
-    },
-    "repo_context": {
-      "type": "object",
-      "required": ["repo_full_name", "repo_url", "search_match_path"],
-      "properties": {
-        "repo_full_name": {"type": ["string", "null"]},
-        "repo_url": {"type": ["string", "null"]},
-        "search_match_path": {"type": ["string", "null"]}
-      },
-      "additionalProperties": false
     },
     "metadata": {
       "type": "object",

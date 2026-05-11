@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import re
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
@@ -11,18 +12,54 @@ import orjson
 from tqdm import tqdm
 
 CODE_FENCE_RE = re.compile(r"```([a-zA-Z0-9_+\-]*)\n(.*?)```", re.DOTALL)
-SECURITY_TERMS_RE = re.compile(
-    r"(?i)\b(auth|authentication|authorization|xss|csrf|sql injection|rce|"
-    r"command injection|path traversal|ssrf|secret|token|password|encrypt|tls|ssl)\b"
-)
+EMPTY_DIFF_RE = re.compile(r"^(?:[-+]\s*)+$")
 LOG_LIKE_RE = re.compile(r"(?i)(build succeeded|stack trace|exception|cannot find path|\bps\s+[A-Z]:\\)")
 COPIED_LIKE_RE = re.compile(r"(?i)(file:///|read file:|listed directory|grep search for)")
+COMMAND_BLOCK_TYPES = {"bash", "sh", "shell", "zsh", "powershell", "ps1", "cmd", "terminal"}
+SKIP_BLOCK_TYPES = {"details", "read-file", "tool-use", "think", "unknown"}
+CODE_BLOCK_TYPES = {
+    "c",
+    "cpp",
+    "csharp",
+    "css",
+    "dart",
+    "diff",
+    "dockerfile",
+    "elixir",
+    "go",
+    "html",
+    "java",
+    "javascript",
+    "js",
+    "json",
+    "jsonc",
+    "jsx",
+    "kotlin",
+    "lua",
+    "markdown",
+    "md",
+    "php",
+    "plaintext",
+    "python",
+    "py",
+    "ruby",
+    "rust",
+    "sql",
+    "swift",
+    "toml",
+    "ts",
+    "tsx",
+    "typescript",
+    "vue",
+    "xml",
+    "yaml",
+    "yml",
+}
 
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Extract analyzable assistant candidates from chat JSON files.")
     p.add_argument("--chats-dir", type=Path, required=True)
-    p.add_argument("--searches-file", type=Path, required=True)
     p.add_argument("--out", type=Path, required=True)
     p.add_argument("--limit", type=int, default=0, help="0 means no limit")
     return p.parse_args()
@@ -47,24 +84,6 @@ def short_text(s: str, max_len: int = 300) -> str:
     return s[: max_len - 3] + "..."
 
 
-def load_repo_index(searches_file: Path) -> dict[str, dict[str, str | None]]:
-    raw = load_json(searches_file)
-    index: dict[str, dict[str, str | None]] = {}
-    for item in raw:
-        sha = item.get("sha")
-        if not isinstance(sha, str):
-            continue
-        if sha in index:
-            continue
-        repo = item.get("repository") or {}
-        index[sha] = {
-            "repo_full_name": repo.get("full_name"),
-            "repo_url": repo.get("html_url"),
-            "search_match_path": item.get("path"),
-        }
-    return index
-
-
 def flatten_blocks(blocks: Any) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     if not isinstance(blocks, list):
@@ -79,16 +98,25 @@ def flatten_blocks(blocks: Any) -> list[dict[str, Any]]:
     return out
 
 
+def language_hint_from_block_type(block_type: str) -> str | None:
+    base = block_type.strip().lower().split(":", 1)[0]
+    if base in CODE_BLOCK_TYPES:
+        return base
+    return None
+
+
 def detect_attribution(candidate_type: str, source_block_type: str, content: str) -> str:
     txt = content.strip()
-    if source_block_type == "unknown" or LOG_LIKE_RE.search(txt):
+    source_block_type_norm = source_block_type.strip().lower()
+    if source_block_type_norm == "unknown" or LOG_LIKE_RE.search(txt):
         return "execution_log"
     if COPIED_LIKE_RE.search(txt):
         return "copied_from_repo"
-    if candidate_type in {"command", "code_snippet", "security_advice"} and source_block_type in {
-        "bash",
-        "text",
-    }:
+    if candidate_type in {"command", "code_snippet"} and (
+        source_block_type_norm in COMMAND_BLOCK_TYPES
+        or source_block_type_norm == "text"
+        or language_hint_from_block_type(source_block_type) is not None
+    ):
         return "generated"
     return "unclear"
 
@@ -107,9 +135,12 @@ def build_candidate(
     content: str,
     block_type: str,
     preceding_user_text: str | None,
-    repo_ctx: dict[str, str | None],
-) -> dict[str, Any]:
+) -> dict[str, Any] | None:
     cleaned = normalize_text(content)
+    if not cleaned:
+        return None
+    if candidate_type == "code_snippet" and language_hint == "diff" and EMPTY_DIFF_RE.fullmatch(cleaned):
+        return None
     digest = sha256_text(cleaned)
     candidate_id = f"{chat_id}:{message_index}:{block_index}:{candidate_idx}:{candidate_type}"
     attribution = detect_attribution(candidate_type, block_type, cleaned)
@@ -126,11 +157,6 @@ def build_candidate(
         "content": cleaned,
         "content_hash": digest,
         "attribution": attribution,
-        "repo_context": {
-            "repo_full_name": repo_ctx.get("repo_full_name"),
-            "repo_url": repo_ctx.get("repo_url"),
-            "search_match_path": repo_ctx.get("search_match_path"),
-        },
         "metadata": {
             "block_type": block_type,
             "preceding_user_text": short_text(preceding_user_text or "") or None,
@@ -139,16 +165,17 @@ def build_candidate(
     }
 
 
-def extract_from_chat(chat_path: Path, repo_index: dict[str, dict[str, str | None]]) -> list[dict[str, Any]]:
+def append_candidate(candidates: list[dict[str, Any]], candidate: dict[str, Any] | None) -> None:
+    if candidate is not None:
+        candidates.append(candidate)
+
+
+def extract_from_chat(chat_path: Path) -> list[dict[str, Any]]:
     data = load_json(chat_path)
     messages = data.get("messages") or []
     platform = data.get("platform")
     timestamp = data.get("timestamp")
     chat_id = chat_path.name.replace(".md.json", "")
-    repo_ctx = repo_index.get(
-        chat_id,
-        {"repo_full_name": None, "repo_url": None, "search_match_path": None},
-    )
 
     candidates: list[dict[str, Any]] = []
     last_user_text: str | None = None
@@ -176,8 +203,13 @@ def extract_from_chat(chat_path: Path, repo_index: dict[str, dict[str, str | Non
                 continue
 
             local_idx = 0
-            if block_type == "bash":
-                candidates.append(
+            block_type_norm = block_type.strip().lower()
+            if block_type_norm in SKIP_BLOCK_TYPES:
+                continue
+
+            if block_type_norm in COMMAND_BLOCK_TYPES:
+                append_candidate(
+                    candidates,
                     build_candidate(
                         chat_id=chat_id,
                         chat_path=chat_path,
@@ -191,12 +223,32 @@ def extract_from_chat(chat_path: Path, repo_index: dict[str, dict[str, str | Non
                         content=content,
                         block_type=block_type,
                         preceding_user_text=last_user_text,
-                        repo_ctx=repo_ctx,
-                    )
+                    ),
                 )
                 continue
 
-            if block_type != "text":
+            language_hint = language_hint_from_block_type(block_type)
+            if language_hint is not None:
+                append_candidate(
+                    candidates,
+                    build_candidate(
+                        chat_id=chat_id,
+                        chat_path=chat_path,
+                        platform=platform,
+                        timestamp=timestamp,
+                        message_index=mi,
+                        block_index=bi,
+                        candidate_idx=local_idx,
+                        candidate_type="code_snippet",
+                        language_hint=language_hint,
+                        content=content,
+                        block_type=block_type,
+                        preceding_user_text=last_user_text,
+                    ),
+                )
+                continue
+
+            if block_type_norm != "text":
                 continue
 
             text = normalize_text(content)
@@ -204,7 +256,8 @@ def extract_from_chat(chat_path: Path, repo_index: dict[str, dict[str, str | Non
             for m in CODE_FENCE_RE.finditer(text):
                 lang = m.group(1).strip() or None
                 snippet = m.group(2)
-                candidates.append(
+                append_candidate(
+                    candidates,
                     build_candidate(
                         chat_id=chat_id,
                         chat_path=chat_path,
@@ -218,29 +271,9 @@ def extract_from_chat(chat_path: Path, repo_index: dict[str, dict[str, str | Non
                         content=snippet,
                         block_type=block_type,
                         preceding_user_text=last_user_text,
-                        repo_ctx=repo_ctx,
-                    )
+                    ),
                 )
                 local_idx += 1
-
-            if SECURITY_TERMS_RE.search(text):
-                candidates.append(
-                    build_candidate(
-                        chat_id=chat_id,
-                        chat_path=chat_path,
-                        platform=platform,
-                        timestamp=timestamp,
-                        message_index=mi,
-                        block_index=bi,
-                        candidate_idx=local_idx,
-                        candidate_type="security_advice",
-                        language_hint=None,
-                        content=text,
-                        block_type=block_type,
-                        preceding_user_text=last_user_text,
-                        repo_ctx=repo_ctx,
-                    )
-                )
 
     return candidates
 
@@ -251,45 +284,26 @@ def main() -> None:
     if args.limit and args.limit > 0:
         chat_files = chat_files[: args.limit]
 
-    repo_index = load_repo_index(args.searches_file)
     args.out.parent.mkdir(parents=True, exist_ok=True)
 
     total_candidates = 0
+    type_counts: Counter[str] = Counter()
     with args.out.open("wb") as f:
         for chat_file in tqdm(chat_files, desc="extract"):
             try:
-                candidates = extract_from_chat(chat_file, repo_index)
+                candidates = extract_from_chat(chat_file)
             except Exception as exc:  # noqa: BLE001
-                err = {
-                    "candidate_id": f"error:{chat_file.name}",
-                    "chat_id": chat_file.name,
-                    "chat_path": str(chat_file),
-                    "platform": None,
-                    "timestamp": None,
-                    "message_index": 0,
-                    "block_index": 0,
-                    "candidate_type": "security_advice",
-                    "language_hint": None,
-                    "content": f"PARSE_ERROR: {exc}",
-                    "content_hash": sha256_text(str(exc)),
-                    "attribution": "unclear",
-                    "repo_context": {
-                        "repo_full_name": None,
-                        "repo_url": None,
-                        "search_match_path": None,
-                    },
-                    "metadata": {"error": True},
-                }
-                f.write(orjson.dumps(err) + b"\n")
-                total_candidates += 1
+                type_counts["parse_error"] += 1
                 continue
 
             for c in candidates:
                 f.write(orjson.dumps(c) + b"\n")
+                type_counts[str(c.get("candidate_type") or "unknown")] += 1
             total_candidates += len(candidates)
 
     print(f"Processed chats: {len(chat_files)}")
     print(f"Extracted candidates: {total_candidates}")
+    print(f"Candidate types: {dict(sorted(type_counts.items()))}")
     print(f"Output: {args.out}")
 
 
