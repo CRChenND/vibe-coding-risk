@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Risk Finding Annotation</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <h1>Risk Finding Annotation</h1>
+        <p id="datasetMeta">No dataset loaded</p>
+      </div>
+      <div class="topActions">
+        <label class="fileButton">
+          Load JSON
+          <input id="fileInput" type="file" accept=".json,application/json" />
+        </label>
+        <button id="exportJsonl">Export JSONL</button>
+        <button id="exportCsv">Export CSV</button>
+      </div>
+    </header>
+
+    <main class="layout">
+      <aside class="sidebar">
+        <div class="filters">
+          <input id="searchBox" type="search" placeholder="Search CWE, chat, candidate, code" />
+          <select id="statusFilter">
+            <option value="all">All statuses</option>
+            <option value="unlabeled">Unlabeled</option>
+            <option value="labeled">Labeled</option>
+            <option value="agree">Agree</option>
+            <option value="disagree">Disagree</option>
+          </select>
+          <select id="severityFilter">
+            <option value="all">All severities</option>
+          </select>
+          <select id="agreementFilter">
+            <option value="all">All sources</option>
+          </select>
+          <select id="pageSize">
+            <option value="50">50 per page</option>
+            <option value="100" selected>100 per page</option>
+            <option value="200">200 per page</option>
+          </select>
+        </div>
+        <div class="progress">
+          <div id="progressText">0 / 0 labeled</div>
+          <div class="progressTrack"><div id="progressBar"></div></div>
+        </div>
+        <div class="pageControls">
+          <button id="prevPage">Prev page</button>
+          <span id="pageText">Page 0 / 0</span>
+          <button id="nextPage">Next page</button>
+        </div>
+        <div id="recordList" class="recordList"></div>
+      </aside>
+
+      <section class="detail">
+        <div id="emptyState" class="emptyState">
+          Build `analysis/output/finding_annotation_dataset.json`, then open this page
+          through a local server.
+        </div>
+
+        <article id="recordDetail" class="recordDetail hidden">
+          <section class="annotationPanel">
+            <label>
+              Agree with existing finding?
+              <select id="humanAgree">
+                <option value="">Unlabeled</option>
+                <option value="true">Agree</option>
+                <option value="false">Disagree</option>
+              </select>
+            </label>
+            <label class="disagreeField">
+              Human CWE(s)
+              <div class="cweInputWrap">
+                <input
+                  id="humanPrimaryCwe"
+                  type="text"
+                  autocomplete="off"
+                  placeholder="CWE-798, CWE-200, unmapped"
+                />
+                <div id="cweSuggestions" class="cweSuggestions hidden"></div>
+              </div>
+            </label>
+            <label class="wideField disagreeField">
+              Human notes
+              <textarea
+                id="humanNotes"
+                rows="3"
+                placeholder="Why you disagree; corrected CWE or invalid-risk rationale"
+              ></textarea>
+            </label>
+          </section>
+
+          <section class="reviewTabs" aria-label="Review sections">
+            <button class="tabButton active" type="button" data-tab="code">Code</button>
+            <button class="tabButton" type="button" data-tab="context">Context</button>
+            <button class="tabButton" type="button" data-tab="evidence">Evidence</button>
+            <button class="tabButton" type="button" data-tab="cwe">CWE</button>
+          </section>
+
+          <section class="tabPanels">
+            <div class="pane tabPanel active" data-panel="code">
+              <div class="paneHead">
+                <h2>Candidate</h2>
+                <button id="copyCode" class="iconButton" type="button" title="Copy code" aria-label="Copy code">
+                  ⧉
+                </button>
+              </div>
+              <div id="candidateMeta" class="metaGrid"></div>
+              <div id="candidateCode" class="candidateList"></div>
+            </div>
+            <div class="pane tabPanel" data-panel="context">
+              <div class="paneHead">
+                <h2>Conversation Context</h2>
+                <button
+                  id="copyContext"
+                  class="iconButton"
+                  type="button"
+                  title="Copy context"
+                  aria-label="Copy context"
+                >
+                  ⧉
+                </button>
+              </div>
+              <div id="contextBox" class="contextBox"></div>
+            </div>
+            <div class="pane tabPanel" data-panel="evidence">
+              <h2>Finding</h2>
+              <div id="findingMeta" class="metaGrid"></div>
+              <div id="evidenceBox" class="evidenceBox"></div>
+            </div>
+            <div class="pane tabPanel" data-panel="cwe">
+              <h2>CWE Mapping</h2>
+              <div id="cweBox" class="cweBox"></div>
+            </div>
+          </section>
+        </article>
+      </section>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>

@@ -30,7 +30,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--model", type=str, default="openai/gpt-5.4-mini")
     p.add_argument("--limit", type=int, default=0, help="0 means no limit")
     p.add_argument("--temperature", type=float, default=0.0)
-    p.add_argument("--max-tokens", type=int, default=900)
+    p.add_argument("--max-tokens", type=int, default=1400)
     p.add_argument("--retries", type=int, default=3)
     p.add_argument("--sleep", type=float, default=0.0, help="sleep seconds between requests")
     p.add_argument("--verify-prompt", type=Path, default=DEFAULT_VERIFY_PROMPT)
@@ -43,6 +43,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--no-verify-cwe", dest="verify_cwe", action="store_false")
     p.add_argument("--resume", dest="resume", action="store_true", default=True, help="Resume from existing output.")
     p.add_argument("--no-resume", dest="resume", action="store_false", help="Do not resume; overwrite output.")
+    p.add_argument("--retry-failures", action="store_true", help="When resuming, retry prior fallback/error rows instead of treating them as done.")
+    p.add_argument("--judge-all", action="store_true", help="Judge all candidates, including those without risk signals. By default, only candidates with risk signals are judged.")
     return p.parse_args()
 
 
@@ -82,7 +84,12 @@ def parse_judge_json(text: str) -> dict[str, Any]:
         raise
 
 
-def load_done_candidate_ids(out_file: Path) -> set[str]:
+def is_failure_row(obj: dict[str, Any]) -> bool:
+    details = obj.get("details") if isinstance(obj.get("details"), dict) else {}
+    return bool(details.get("error") or details.get("attribution_error"))
+
+
+def load_done_candidate_ids(out_file: Path, retry_failures: bool = False) -> set[str]:
     done: set[str] = set()
     if not out_file.exists():
         return done
@@ -95,10 +102,42 @@ def load_done_candidate_ids(out_file: Path) -> set[str]:
                 obj = orjson.loads(line)
             except Exception:  # noqa: BLE001
                 continue
+            if retry_failures and is_failure_row(obj):
+                continue
             cid = obj.get("candidate_id")
             if isinstance(cid, str) and cid:
                 done.add(cid)
     return done
+
+
+def write_jsonl_row(wf: Any, row: dict[str, Any]) -> None:
+    wf.write(orjson.dumps(row) + b"\n")
+    wf.flush()
+
+
+def compact_resume_output(out_file: Path) -> None:
+    if not out_file.exists():
+        return
+    rows_by_id: dict[str, dict[str, Any]] = {}
+    order: list[str] = []
+    with out_file.open("rb") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                obj = orjson.loads(line)
+            except Exception:  # noqa: BLE001
+                continue
+            candidate_id = str(obj.get("candidate_id") or "")
+            if not candidate_id or is_failure_row(obj):
+                continue
+            if candidate_id not in rows_by_id:
+                order.append(candidate_id)
+            rows_by_id[candidate_id] = obj
+    with out_file.open("wb") as wf:
+        for candidate_id in order:
+            wf.write(orjson.dumps(rows_by_id[candidate_id]) + b"\n")
 
 
 def load_finding_rows(path: Path | None) -> dict[str, dict[str, Any]]:
@@ -166,11 +205,45 @@ def load_cwe_candidate_rows(path: Path | None) -> dict[str, dict[str, Any]]:
                 rows[cid] = obj
     return rows
 
+def has_nonempty_cwe_options(cwe_candidate_row: dict[str, Any] | None) -> bool:
+    if not cwe_candidate_row:
+        return False
+    options = cwe_candidate_row.get("candidate_cwe_options") or cwe_candidate_row.get("cwe_options")
+    return isinstance(options, list) and len(options) > 0
+
+
+def has_risk_signal(candidate: dict[str, Any], cwe_candidate_row: dict[str, Any] | None) -> bool:
+    """
+    Decide whether this candidate is worth sending to the LLM judge.
+
+    Default policy:
+    - If no --cwe-candidates file is provided, do not filter, because we lack signal metadata.
+    - If CWE candidate metadata is available, only judge candidates with at least one signal:
+      Semgrep match, pattern match, risk tags, or non-empty CWE options.
+    """
+    if cwe_candidate_row is None:
+        return True
+
+    if bool(cwe_candidate_row.get("semgrep_matched")):
+        return True
+
+    if bool(cwe_candidate_row.get("pattern_matched")):
+        return True
+
+    risk_tags = cwe_candidate_row.get("risk_tags")
+    if isinstance(risk_tags, list) and len(risk_tags) > 0:
+        return True
+
+    if has_nonempty_cwe_options(cwe_candidate_row):
+        return True
+
+    return False
+
 
 def cwe_options_for_prompt(row: dict[str, Any] | None) -> list[dict[str, Any]]:
     if not row:
         return []
-    options = row.get("candidate_cwe_options")
+    options = row.get("candidate_cwe_options") or row.get("cwe_options")
     if not isinstance(options, list):
         return []
     out: list[dict[str, Any]] = []
@@ -183,10 +256,12 @@ def cwe_options_for_prompt(row: dict[str, Any] | None) -> list[dict[str, Any]]:
         out.append(
             {
                 "cwe": cwe,
+                "cwe_id": option.get("cwe_id") or cwe,
                 "title": option.get("title") or option.get("name") or cwe,
                 "abstraction": option.get("abstraction") or "",
                 "description": clip_text(str(option.get("description") or ""), 400),
-                "sources": option.get("sources") or [],
+                "sources": option.get("sources") or option.get("source") or [],
+                "matched_terms": option.get("matched_terms") or [],
                 "reasons": option.get("reasons") or [],
             }
         )
@@ -269,15 +344,31 @@ def normalize_finding(
 
     cwe, rejected_out_of_set = constrained_cwes(parsed, cwe_candidate_row)
     primary_cwe = cwe[0] if cwe else None
+    primary_cwe_abstraction = candidate_abstraction(primary_cwe, cwe_candidate_row)
+
     cwe_confidence = parsed.get("cwe_confidence", parsed.get("confidence", 0.0))
     try:
         cwe_confidence = float(cwe_confidence)
     except (TypeError, ValueError):
         cwe_confidence = 0.0
     cwe_confidence = max(0.0, min(1.0, cwe_confidence))
-    cwe_specificity = str(parsed.get("cwe_specificity") or ("specific" if primary_cwe else "unmapped")).lower()
-    if cwe_specificity not in {"specific", "broad", "ambiguous", "unmapped"}:
+
+    # Normalize CWE specificity from the selected CWE abstraction instead of
+    # trusting the model's free-form specificity judgment.
+    if primary_cwe is None:
+        cwe_specificity = "unmapped"
+    elif len(cwe) > 1:
         cwe_specificity = "ambiguous"
+    elif primary_cwe_abstraction in {"Class", "Pillar", "Category"}:
+        cwe_specificity = "broad"
+    elif primary_cwe_abstraction in {"Base", "Variant"}:
+        cwe_specificity = "specific"
+    else:
+        # If abstraction is unavailable, fall back to the model output but keep
+        # it within the allowed vocabulary.
+        cwe_specificity = str(parsed.get("cwe_specificity") or "ambiguous").lower()
+        if cwe_specificity not in {"specific", "broad", "ambiguous", "unmapped"}:
+            cwe_specificity = "ambiguous"
 
     evidence = parsed.get("evidence", [])
     if not isinstance(evidence, list):
@@ -290,7 +381,12 @@ def normalize_finding(
         quote = str(ev.get("quote", "")).strip()
         reason = str(ev.get("reason", "")).strip()
         if quote or reason:
-            fixed_evidence.append({"quote": clip_text(quote, 240), "reason": clip_text(reason, 300)})
+            fixed_evidence.append(
+                {
+                    "quote": clip_text(quote, 240),
+                    "reason": clip_text(reason, 300),
+                }
+            )
 
     if not fixed_evidence:
         fixed_evidence = [{"quote": "", "reason": "No evidence provided by judge."}]
@@ -304,13 +400,24 @@ def normalize_finding(
     # contradictory combinations such as is_risky=true with verdict=not_risky.
     if not is_actionable:
         is_risky = False
+
     if verdict == "not_risky" or severity == "none":
         is_risky = False
+
     if not is_risky:
         severity = "none"
         verdict = "not_risky"
         cwe = []
         primary_cwe = None
+        primary_cwe_abstraction = None
+        cwe_confidence = 0.0
+        cwe_specificity = "unmapped"
+
+    # If the candidate is risky but no in-set CWE survives the constraint,
+    # mark it as unmapped and request human review.
+    if is_risky and not cwe:
+        primary_cwe = None
+        primary_cwe_abstraction = None
         cwe_confidence = 0.0
         cwe_specificity = "unmapped"
 
@@ -330,7 +437,7 @@ def normalize_finding(
         "cwe": cwe,
         "cwe_ids": cwe,
         "primary_cwe": primary_cwe,
-        "cwe_abstraction": candidate_abstraction(primary_cwe, cwe_candidate_row),
+        "cwe_abstraction": primary_cwe_abstraction,
         "cwe_candidates_considered": sorted(allowed_cwes(cwe_candidate_row)),
         "rejected_cwes": normalize_rejected_cwes(parsed.get("rejected_cwes", []), cwe_candidate_row),
         "cwe_confidence": cwe_confidence,
@@ -350,7 +457,6 @@ def normalize_finding(
             },
         },
     }
-
 
 def summarize_finding(finding: dict[str, Any]) -> dict[str, Any]:
     details = finding.get("details") or {}
@@ -580,13 +686,16 @@ def main() -> None:
         raw_lines = raw_lines[: args.limit]
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
-    done_ids = load_done_candidate_ids(args.out) if args.resume else set()
+    if args.resume and args.retry_failures:
+        compact_resume_output(args.out)
+    done_ids = load_done_candidate_ids(args.out, retry_failures=args.retry_failures) if args.resume else set()
     baseline_rows = load_finding_rows(args.baseline)
     cwe_candidate_rows = load_cwe_candidate_rows(args.cwe_candidates)
 
     count_ok = 0
     count_err = 0
     count_skip = 0
+    count_skip_no_signal = 0
 
     mode = "ab" if args.resume else "wb"
 
@@ -594,11 +703,20 @@ def main() -> None:
     for line in raw_lines:
         if not line.strip():
             continue
+
         candidate = orjson.loads(line)
         candidate_id = str(candidate.get("candidate_id", "unknown"))
+
         if candidate_id in done_ids:
             count_skip += 1
             continue
+
+        cwe_candidate_row = cwe_candidate_rows.get(candidate_id)
+
+        if not args.judge_all and not has_risk_signal(candidate, cwe_candidate_row):
+            count_skip_no_signal += 1
+            continue
+
         pending_candidates.append(candidate)
 
     with args.out.open(mode) as wf:
@@ -621,7 +739,7 @@ def main() -> None:
                     baseline_rows=baseline_rows,
                     cwe_candidate_rows=cwe_candidate_rows,
                 )
-                wf.write(orjson.dumps(finding) + b"\n")
+                write_jsonl_row(wf, finding)
                 done_ids.add(str(candidate.get("candidate_id", "unknown")))
                 if ok:
                     count_ok += 1
@@ -655,7 +773,7 @@ def main() -> None:
                 for future in tqdm(as_completed(futures), total=len(futures), desc="llm-judge"):
                     candidate_id = futures[future]
                     finding, ok = future.result()
-                    wf.write(orjson.dumps(finding) + b"\n")
+                    write_jsonl_row(wf, finding)
                     done_ids.add(candidate_id)
                     if ok:
                         count_ok += 1
@@ -666,6 +784,8 @@ def main() -> None:
 
     print(f"Candidates seen: {len(raw_lines)}")
     print(f"Candidates skipped(resume): {count_skip}")
+    print(f"Candidates skipped(no risk signal): {count_skip_no_signal}")
+    print(f"Candidates pending for judge: {len(pending_candidates)}")
     print(f"Judge success: {count_ok}")
     print(f"Judge fallback(errors): {count_err}")
     print(f"Output: {args.out}")

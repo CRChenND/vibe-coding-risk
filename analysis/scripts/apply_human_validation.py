@@ -78,6 +78,14 @@ ALLOWED_LABELS = {
     },
 }
 
+ALLOWED_CWE_GRANULARITY = {
+    "correct_specific",
+    "correct_but_too_broad",
+    "incorrect",
+    "unmapped_but_valid_risk",
+    "not_a_valid_risk",
+}
+
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Merge filled human validation CSV labels back into episodes.")
@@ -170,13 +178,47 @@ def apply_row(episode: dict[str, Any], human: dict[str, str] | None, stats: Coun
             stats["valid_risk"] += 1
             if out.get("confidence_tier") != "high":
                 out["confidence_tier"] = "high"
+            out["risk_confidence_tier"] = "high"
         else:
             stats["rejected_risk"] += 1
             out["confidence_tier"] = "excluded"
+            out["risk_confidence_tier"] = "excluded"
+            out["cwe_confidence_tier"] = "excluded"
 
     human_cwe_is_correct = parse_bool(human.get("human_cwe_is_correct", ""))
     human_primary_cwe = human.get("human_primary_cwe", "").strip().upper()
-    human_more_specific = parse_bool(human.get("human_cwe_should_be_more_specific", ""))
+    human_cwe_granularity = human.get("human_cwe_granularity", "").strip()
+    if not human_cwe_granularity:
+        legacy_more_specific = parse_bool(human.get("human_cwe_should_be_more_specific", ""))
+        if legacy_more_specific is True:
+            human_cwe_granularity = "correct_but_too_broad"
+        elif legacy_more_specific is False and human_cwe_is_correct is True:
+            human_cwe_granularity = "correct_specific"
+    if human_cwe_granularity and human_cwe_granularity not in ALLOWED_CWE_GRANULARITY:
+        human_cwe_granularity = "incorrect"
+
+    if human_cwe_granularity:
+        stats[f"cwe_granularity_{human_cwe_granularity}"] += 1
+        validation["human_cwe_granularity"] = human_cwe_granularity
+        if human_cwe_granularity == "correct_specific":
+            out["cwe_confidence_tier"] = "high"
+            out["needs_human_cwe_review"] = False
+        elif human_cwe_granularity == "correct_but_too_broad":
+            out["cwe_confidence_tier"] = "medium"
+            out["cwe_specificity"] = "broad"
+            out["needs_human_cwe_review"] = False
+        elif human_cwe_granularity == "unmapped_but_valid_risk":
+            out["cwe_confidence_tier"] = "unmapped"
+            out["primary_cwe"] = None
+            out["cwe_ids"] = []
+            out["cwe_specificity"] = "unmapped"
+            out["needs_human_cwe_review"] = False
+        elif human_cwe_granularity == "not_a_valid_risk":
+            out["human_verified"] = False
+            out["confidence_tier"] = "excluded"
+            out["risk_confidence_tier"] = "excluded"
+            out["cwe_confidence_tier"] = "excluded"
+
     if human_cwe_is_correct is not None:
         stats["cwe_validated_rows"] += 1
         if human_cwe_is_correct:
@@ -192,15 +234,16 @@ def apply_row(episode: dict[str, Any], human: dict[str, str] | None, stats: Coun
             out["primary_cwe"] = human_primary_cwe
             out["cwe_ids"] = [human_primary_cwe]
             out["cwe_specificity"] = "specific"
+            if out.get("cwe_confidence_tier") not in {"high", "medium"}:
+                out["cwe_confidence_tier"] = "high"
             out["needs_human_cwe_review"] = False
         elif human_primary_cwe in {"NONE", "NULL", "UNMAPPED"}:
             stats["primary_cwe_unmapped_by_human"] += 1
             out["primary_cwe"] = None
             out["cwe_ids"] = []
             out["cwe_specificity"] = "unmapped"
+            out["cwe_confidence_tier"] = "unmapped"
             out["needs_human_cwe_review"] = False
-    if human_more_specific is not None:
-        validation["human_cwe_should_be_more_specific"] = human_more_specific
 
     for field in LABEL_FIELDS:
         corrected = human_label(human, field)
@@ -217,6 +260,8 @@ def apply_row(episode: dict[str, Any], human: dict[str, str] | None, stats: Coun
 
     details["human_validation"] = validation
     out["details"] = details
+    out.setdefault("risk_confidence_tier", out.get("confidence_tier", "low"))
+    out.setdefault("cwe_confidence_tier", "medium" if out.get("cwe_ids") else "unmapped")
     return out
 
 
@@ -240,6 +285,11 @@ def validation_report(
         "cwe_correction_rate": round(stats["primary_cwe_corrected"] / stats["human_primary_cwe_filled"], 6)
         if stats["human_primary_cwe_filled"]
         else None,
+        "cwe_granularity_counts": {
+            key.removeprefix("cwe_granularity_"): value
+            for key, value in sorted(stats.items())
+            if key.startswith("cwe_granularity_")
+        },
         "label_correction_rate": {},
         "most_confused_labels": {},
     }

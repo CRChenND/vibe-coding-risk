@@ -159,7 +159,7 @@ def language_distribution(candidates: list[dict[str, Any]], episodes: list[dict[
 def include_by_confidence(row: dict[str, Any], allowed: set[str] | None) -> bool:
     if allowed is None:
         return True
-    return str(row.get("confidence_tier") or "low") in allowed
+    return str(row.get("risk_confidence_tier") or row.get("confidence_tier") or "low") in allowed
 
 
 def episode_agreement(row: dict[str, Any]) -> str:
@@ -216,6 +216,19 @@ def human_validation_outcomes(episodes: list[dict[str, Any]]) -> Counter[str]:
     return counts
 
 
+def human_cwe_granularity_counts(episodes: list[dict[str, Any]]) -> Counter[str]:
+    counts: Counter[str] = Counter()
+    for row in episodes:
+        details = row.get("details") if isinstance(row.get("details"), dict) else {}
+        validation = details.get("human_validation") if isinstance(details.get("human_validation"), dict) else {}
+        granularity = validation.get("human_cwe_granularity")
+        if granularity:
+            counts[str(granularity)] += 1
+        else:
+            counts["not_human_validated"] += 1
+    return counts
+
+
 def risk_lineage_summary_rows(episodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
     by_lineage: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for row in episodes:
@@ -267,7 +280,10 @@ def main() -> None:
         "risk_evolution_counts.csv": ("risk_evolution", count_episode_values(episodes, "risk_evolution")),
         "user_reaction_counts.csv": ("user_reaction", count_episode_values(episodes, "user_reaction")),
         "confidence_tier_distribution.csv": ("confidence_tier", count_episode_values(episodes, "confidence_tier")),
+        "risk_confidence_tier_distribution.csv": ("risk_confidence_tier", count_episode_values(episodes, "risk_confidence_tier")),
+        "cwe_confidence_tier_distribution.csv": ("cwe_confidence_tier", count_episode_values(episodes, "cwe_confidence_tier")),
         "human_validation_outcomes.csv": ("outcome", human_validation_outcomes(episodes)),
+        "human_cwe_granularity_counts.csv": ("human_cwe_granularity", human_cwe_granularity_counts(episodes)),
         "lineage_role_counts.csv": ("lineage_role", count_episode_values(episodes, "lineage_role")),
         "cwe_specificity_distribution.csv": ("cwe_specificity", count_episode_values(episodes, "cwe_specificity")),
     }

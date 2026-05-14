@@ -21,7 +21,7 @@ Return ONLY valid JSON with this exact shape:
   "severity": "low|medium|high|critical|none",
   "confidence": 0.0,
   "cwe": ["CWE-79"],
-  "primary_cwe": "CWE-79|null",
+  "primary_cwe": "CWE-79",
   "cwe_confidence": 0.0,
   "cwe_specificity": "specific|broad|ambiguous|unmapped",
   "needs_human_cwe_review": false,
@@ -50,6 +50,7 @@ Rules:
 6. If the candidate does not fit the MITRE references and is not meaningfully risky, downgrade to `not_risky`.
 7. Keep `evidence.quote` short and exact.
 8. Do NOT classify normal developer operations as security vulnerabilities unless there is clear security impact.
+9. Do not treat the existence of a CWE candidate option as evidence that the candidate is risky. The CWE options are only a constrained vocabulary for mapping risks after risk validity is established.
 
 Candidate record:
 

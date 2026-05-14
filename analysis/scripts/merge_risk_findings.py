@@ -129,16 +129,27 @@ def cwe_confidence_max(rows: list[dict[str, Any]]) -> float:
     return max(values, default=0.0)
 
 
-def confidence_tier(rows: list[dict[str, Any]], analyzers: set[str], cwes: list[str]) -> str:
+def risk_confidence_tier(rows: list[dict[str, Any]], analyzers: set[str]) -> str:
     if {"semgrep", "llm_judge"} <= analyzers:
         return "high"
     llm_rows = [row for row in rows if analyzer_name(row) == "llm_judge"]
     if llm_rows:
         strong_evidence = any(confidence_max([row]) >= 0.75 for row in llm_rows)
-        has_specific_cwe = bool(cwes)
         has_evidence = any(row.get("evidence") for row in llm_rows)
-        if strong_evidence and has_specific_cwe and has_evidence:
+        if strong_evidence and has_evidence:
             return "medium"
+    return "low"
+
+
+def cwe_confidence_tier(rows: list[dict[str, Any]], analyzers: set[str], cwes: list[str]) -> str:
+    if not cwes:
+        return "unmapped"
+    if {"semgrep", "llm_judge"} <= analyzers:
+        return "high"
+    if any(row.get("cwe_specificity") == "unmapped" for row in rows):
+        return "unmapped"
+    if cwe_confidence_max(rows) >= 0.75 and cwes:
+        return "medium"
     return "low"
 
 
@@ -197,6 +208,8 @@ def build_merged_finding(rows: list[dict[str, Any]], candidates: dict[str, dict[
     cwes = sorted({cwe for row in rows for cwe in cwe_values(row)})
     primary = primary_cwe(rows, cwes)
     analyzers = {analyzer_name(row) for row in rows}
+    risk_tier = risk_confidence_tier(rows, analyzers)
+    cwe_tier = cwe_confidence_tier(rows, analyzers, cwes)
     agreement = "both" if {"semgrep", "llm_judge"} <= analyzers else f"{sorted(analyzers)[0]}_only"
     finding_ids = sorted(str(row.get("finding_id") or "") for row in rows if row.get("finding_id"))
     basis = f"{chat_id}:{candidate_id}:{','.join(cwes)}:{','.join(finding_ids)}"
@@ -214,7 +227,9 @@ def build_merged_finding(rows: list[dict[str, Any]], candidates: dict[str, dict[
         "is_actionable": any(bool(row.get("is_actionable")) for row in rows),
         "severity": severity_max(rows),
         "confidence": confidence_max(rows),
-        "confidence_tier": confidence_tier(rows, analyzers, cwes),
+        "confidence_tier": risk_tier,
+        "risk_confidence_tier": risk_tier,
+        "cwe_confidence_tier": cwe_tier,
         "cwe": cwes,
         "cwe_ids": cwes,
         "primary_cwe": primary,

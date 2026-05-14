@@ -18,6 +18,8 @@
     "risk_evolution",
     "user_reaction",
     "confidence_tier",
+    "risk_confidence_tier",
+    "cwe_confidence_tier",
     "cwe_ids",
     "primary_cwe",
     "cwe_abstraction",
@@ -129,6 +131,14 @@
     "confidence_tier": {
       "type": "string",
       "enum": ["high", "medium", "low", "excluded"]
+    },
+    "risk_confidence_tier": {
+      "type": "string",
+      "enum": ["high", "medium", "low", "excluded"]
+    },
+    "cwe_confidence_tier": {
+      "type": "string",
+      "enum": ["high", "medium", "low", "unmapped", "excluded"]
     },
     "cwe_ids": {
       "type": "array",

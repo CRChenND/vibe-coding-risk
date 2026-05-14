@@ -164,6 +164,16 @@ def strongest_confidence_tier(grouped: list[dict[str, Any]]) -> str:
     return best
 
 
+def strongest_tier(grouped: list[dict[str, Any]], field: str, default: str = "low") -> str:
+    rank = {"excluded": 0, "unmapped": 0, "low": 1, "medium": 2, "high": 3}
+    best = default
+    for item in grouped:
+        tier = str(item["finding"].get(field) or default)
+        if rank.get(tier, rank.get(default, 1)) > rank.get(best, 1):
+            best = tier
+    return best
+
+
 def primary_cwe_for_group(grouped: list[dict[str, Any]], cwes: list[str]) -> str | None:
     for item in grouped:
         value = item["finding"].get("primary_cwe")
@@ -245,6 +255,12 @@ def build_episode(
         "risk_evolution": "introduced",
         "user_reaction": "unknown",
         "confidence_tier": strongest_confidence_tier(grouped),
+        "risk_confidence_tier": strongest_tier(grouped, "risk_confidence_tier")
+        if any(item["finding"].get("risk_confidence_tier") for item in grouped)
+        else strongest_confidence_tier(grouped),
+        "cwe_confidence_tier": strongest_tier(grouped, "cwe_confidence_tier", "unmapped")
+        if any(item["finding"].get("cwe_confidence_tier") for item in grouped)
+        else ("medium" if cwes else "unmapped"),
         "cwe_ids": cwes,
         "primary_cwe": primary_cwe,
         "cwe_abstraction": next(
@@ -282,6 +298,8 @@ def build_episode(
                     "analyzers": item["finding"].get("analyzers"),
                     "agreement": item["finding"].get("agreement"),
                     "confidence_tier": item["finding"].get("confidence_tier"),
+                    "risk_confidence_tier": item["finding"].get("risk_confidence_tier"),
+                    "cwe_confidence_tier": item["finding"].get("cwe_confidence_tier"),
                     "severity": item["finding"].get("severity"),
                     "cwe": cwe_values(item["finding"]),
                     "candidate_type": item["candidate"].get("candidate_type"),

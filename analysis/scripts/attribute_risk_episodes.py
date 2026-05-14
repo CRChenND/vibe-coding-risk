@@ -73,7 +73,9 @@ ALLOWED = {
 
 
 def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Assign interaction-level attribution labels to risk episodes.")
+    p = argparse.ArgumentParser(
+        description="Assign interaction-level attribution labels to risk episodes."
+    )
     p.add_argument("--episodes", type=Path, required=True)
     p.add_argument("--chats-dir", type=Path, required=True)
     p.add_argument("--prompt", type=Path, required=True)
@@ -86,6 +88,31 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--sleep", type=float, default=0.0)
     p.add_argument("--resume", dest="resume", action="store_true", default=True)
     p.add_argument("--no-resume", dest="resume", action="store_false")
+    p.add_argument(
+        "--retry-failures",
+        action="store_true",
+        help="When resuming, retry prior attribution_error rows instead of treating them as done.",
+    )
+    p.add_argument(
+        "--fallback-wide",
+        action="store_true",
+        help="Run a second attribution call with a wider chat window when needed.",
+    )
+    p.add_argument("--fallback-window-before", type=int, default=8)
+    p.add_argument("--fallback-window-after", type=int, default=4)
+    p.add_argument(
+        "--fallback-unknown-fields",
+        type=str,
+        default="interaction_stage,risk_origin,mechanism",
+        help="Comma-separated attribution fields that trigger wide fallback when unknown.",
+    )
+    p.add_argument("--fallback-min-evidence-quotes", type=int, default=1)
+    p.add_argument(
+        "--fallback-max",
+        type=int,
+        default=0,
+        help="Maximum wide fallback calls; 0 means no cap.",
+    )
     return p.parse_args()
 
 
@@ -107,7 +134,49 @@ def load_jsonl(path: Path, limit: int = 0) -> list[dict[str, Any]]:
     return rows
 
 
-def load_done_episode_ids(out_file: Path) -> set[str]:
+def flatten_blocks(blocks: Any) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    if not isinstance(blocks, list):
+        return out
+    for entry in blocks:
+        if isinstance(entry, dict):
+            out.append(entry)
+        elif isinstance(entry, list):
+            out.extend(inner for inner in entry if isinstance(inner, dict))
+    return out
+
+
+def load_chat_turns(chats_dir: Path, chat_id: str) -> list[dict[str, Any]]:
+    path = chats_dir / f"{chat_id}.md.json"
+    if not path.exists():
+        return []
+    data = orjson.loads(path.read_bytes())
+    turns: list[dict[str, Any]] = []
+    for idx, msg in enumerate(data.get("messages") or []):
+        role = str(msg.get("role") or "tool").strip().lower()
+        if role == "user":
+            role = "user"
+        elif role == "assistant":
+            role = "assistant"
+        else:
+            role = "tool"
+
+        parts: list[str] = []
+        for block in flatten_blocks(msg.get("blocks")):
+            content = block.get("content")
+            if isinstance(content, str) and content.strip():
+                btype = str(block.get("type") or "text")
+                parts.append(f"[{btype}] {content.strip()}")
+        turns.append({"turn_index": idx, "role": role, "text": "\n\n".join(parts)})
+    return turns
+
+
+def is_failure_row(obj: dict[str, Any]) -> bool:
+    details = obj.get("details") if isinstance(obj.get("details"), dict) else {}
+    return bool(details.get("attribution_error") or details.get("error"))
+
+
+def load_done_episode_ids(out_file: Path, retry_failures: bool = False) -> set[str]:
     done: set[str] = set()
     if not out_file.exists():
         return done
@@ -117,10 +186,42 @@ def load_done_episode_ids(out_file: Path) -> set[str]:
                 obj = orjson.loads(line)
             except Exception:  # noqa: BLE001
                 continue
+            if retry_failures and is_failure_row(obj):
+                continue
             episode_id = obj.get("episode_id")
             if isinstance(episode_id, str) and episode_id:
                 done.add(episode_id)
     return done
+
+
+def write_jsonl_row(wf: Any, row: dict[str, Any]) -> None:
+    wf.write(orjson.dumps(row) + b"\n")
+    wf.flush()
+
+
+def compact_resume_output(out_file: Path) -> None:
+    if not out_file.exists():
+        return
+    rows_by_id: dict[str, dict[str, Any]] = {}
+    order: list[str] = []
+    with out_file.open("rb") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                obj = orjson.loads(line)
+            except Exception:  # noqa: BLE001
+                continue
+            episode_id = str(obj.get("episode_id") or "")
+            if not episode_id or is_failure_row(obj):
+                continue
+            if episode_id not in rows_by_id:
+                order.append(episode_id)
+            rows_by_id[episode_id] = obj
+    with out_file.open("wb") as wf:
+        for episode_id in order:
+            wf.write(orjson.dumps(rows_by_id[episode_id]) + b"\n")
 
 
 def maybe_strip_code_fence(text: str) -> str:
@@ -155,6 +256,57 @@ def conversation_window(episode: dict[str, Any]) -> list[dict[str, Any]]:
         for ev in episode.get("evidence_quotes", [])
         if isinstance(ev, dict)
     ]
+
+
+def expand_episode_window(
+    episode: dict[str, Any],
+    chats_dir: Path,
+    window_before: int,
+    window_after: int,
+) -> dict[str, Any]:
+    chat_id = str(episode.get("chat_id") or "")
+    turns = load_chat_turns(chats_dir, chat_id)
+    if not turns:
+        return episode
+
+    try:
+        risk_turn = int(episode.get("risk_turn_index", 0))
+    except (TypeError, ValueError):
+        risk_turn = 0
+    start_turn = max(0, risk_turn - max(0, window_before))
+    max_turn = max((int(turn["turn_index"]) for turn in turns), default=risk_turn)
+    end_turn = min(max_turn, risk_turn + max(0, window_after))
+
+    evidence_quotes: list[dict[str, Any]] = []
+    for turn in turns:
+        idx = int(turn["turn_index"])
+        if idx < start_turn or idx > end_turn:
+            continue
+        text = clip(str(turn.get("text") or ""), 1000)
+        if not text:
+            continue
+        why = "risk candidate turn" if idx == risk_turn else "wide fallback context"
+        evidence_quotes.append(
+            {
+                "turn_index": idx,
+                "role": turn["role"],
+                "quote": text,
+                "why_relevant": why,
+            }
+        )
+
+    out = dict(episode)
+    out["episode_window"] = {"start_turn": start_turn, "end_turn": end_turn}
+    out["evidence_turns"] = list(range(start_turn, end_turn + 1))
+    out["evidence_quotes"] = evidence_quotes
+    details = dict(out.get("details") or {})
+    details["wide_fallback_context"] = {
+        "window_before": window_before,
+        "window_after": window_after,
+        "source_episode_window": episode.get("episode_window"),
+    }
+    out["details"] = details
+    return out
 
 
 def build_prompt(template: str, episode: dict[str, Any]) -> str:
@@ -248,7 +400,9 @@ def normalize_attribution(parsed: dict[str, Any], episode: dict[str, Any]) -> di
     out["evidence_turns"] = sorted(set(fixed_turns))
 
     quotes = parsed.get("evidence_quotes")
-    if not isinstance(quotes, list):
+    parsed_evidence_quote_count = len(quotes) if isinstance(quotes, list) else 0
+    used_episode_quotes_fallback = not isinstance(quotes, list)
+    if used_episode_quotes_fallback:
         quotes = episode.get("evidence_quotes", [])
     fixed_quotes: list[dict[str, Any]] = []
     for ev in quotes:
@@ -274,8 +428,32 @@ def normalize_attribution(parsed: dict[str, Any], episode: dict[str, Any]) -> di
     out["details"]["attribution"] = {
         "model": parsed.get("_model"),
         "raw_labels": {key: parsed.get(key) for key in ALLOWED},
+        "parsed_evidence_quote_count": parsed_evidence_quote_count,
+        "used_episode_quotes_fallback": used_episode_quotes_fallback,
     }
     return out
+
+
+def fallback_reasons(
+    row: dict[str, Any],
+    unknown_fields: set[str],
+    min_evidence_quotes: int,
+) -> list[str]:
+    reasons: list[str] = []
+    for field in sorted(unknown_fields):
+        if field in ALLOWED and row.get(field) == "unknown":
+            reasons.append(f"{field}=unknown")
+    details = row.get("details") if isinstance(row.get("details"), dict) else {}
+    attribution = details.get("attribution") if isinstance(details.get("attribution"), dict) else {}
+    evidence_quote_count = attribution.get("parsed_evidence_quote_count")
+    if not isinstance(evidence_quote_count, int):
+        evidence_quotes = row.get("evidence_quotes")
+        evidence_quote_count = len(evidence_quotes) if isinstance(evidence_quotes, list) else 0
+    if evidence_quote_count < min_evidence_quotes:
+        reasons.append(f"evidence_quotes<{min_evidence_quotes}")
+    if details.get("attribution_error"):
+        reasons.append("attribution_error")
+    return reasons
 
 
 def attribute_episode(
@@ -288,7 +466,14 @@ def attribute_episode(
     temperature: float,
     max_tokens: int,
     retries: int,
+    chats_dir: Path | None = None,
+    fallback_wide: bool = False,
+    fallback_window_before: int = 8,
+    fallback_window_after: int = 4,
+    fallback_unknown_fields: set[str] | None = None,
+    fallback_min_evidence_quotes: int = 1,
 ) -> dict[str, Any]:
+    fallback_unknown_fields = fallback_unknown_fields or set()
     prompt_text = build_prompt(template, episode)
     last_err: Exception | None = None
     for attempt in range(1, retries + 1):
@@ -296,7 +481,46 @@ def attribute_episode(
             text = call_openrouter(client, api_key, model, prompt_text, temperature, max_tokens)
             parsed = parse_json_response(text)
             parsed["_model"] = model
-            return normalize_attribution(parsed, episode)
+            first = normalize_attribution(parsed, episode)
+            reasons = fallback_reasons(first, fallback_unknown_fields, fallback_min_evidence_quotes)
+            if fallback_wide and reasons and chats_dir is not None:
+                wide_episode = expand_episode_window(
+                    episode,
+                    chats_dir,
+                    fallback_window_before,
+                    fallback_window_after,
+                )
+                if wide_episode.get("evidence_quotes") != episode.get("evidence_quotes"):
+                    wide_text = call_openrouter(
+                        client,
+                        api_key,
+                        model,
+                        build_prompt(template, wide_episode),
+                        temperature,
+                        max_tokens,
+                    )
+                    wide_parsed = parse_json_response(wide_text)
+                    wide_parsed["_model"] = model
+                    second = normalize_attribution(wide_parsed, wide_episode)
+                    details = dict(second.get("details") or {})
+                    details["attribution_fallback"] = {
+                        "triggered": True,
+                        "reasons": reasons,
+                        "default_labels": {key: first.get(key) for key in ALLOWED},
+                        "default_model_evidence_quote_count": (
+                            (first.get("details") or {})
+                            .get("attribution", {})
+                            .get("parsed_evidence_quote_count")
+                        ),
+                        "wide_window": wide_episode.get("episode_window"),
+                    }
+                    second["details"] = details
+                    return second
+
+            details = dict(first.get("details") or {})
+            details["attribution_fallback"] = {"triggered": False, "reasons": reasons}
+            first["details"] = details
+            return first
         except Exception as exc:  # noqa: BLE001
             last_err = exc
             if attempt < retries:
@@ -316,15 +540,30 @@ def main() -> None:
         raise SystemExit("Missing OPENROUTER_API_KEY in environment/.env")
 
     episodes = load_jsonl(args.episodes, args.limit)
+    fallback_unknown_fields = {
+        field.strip()
+        for field in args.fallback_unknown_fields.split(",")
+        if field.strip()
+    }
     template = args.prompt.read_text(encoding="utf-8")
     base_url = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
-    done_ids = load_done_episode_ids(args.out) if args.resume else set()
+    if args.resume and args.retry_failures:
+        compact_resume_output(args.out)
+    done_ids = (
+        load_done_episode_ids(args.out, retry_failures=args.retry_failures)
+        if args.resume
+        else set()
+    )
     pending = [ep for ep in episodes if str(ep.get("episode_id") or "") not in done_ids]
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
     mode = "ab" if args.resume else "wb"
     with httpx.Client(base_url=base_url, timeout=120.0) as client, args.out.open(mode) as wf:
+        fallback_used = 0
         for episode in tqdm(pending, desc="risk-attribution"):
+            use_fallback = args.fallback_wide and (
+                args.fallback_max <= 0 or fallback_used < args.fallback_max
+            )
             row = attribute_episode(
                 episode,
                 client=client,
@@ -334,14 +573,31 @@ def main() -> None:
                 temperature=args.temperature,
                 max_tokens=args.max_tokens,
                 retries=args.retries,
+                chats_dir=args.chats_dir,
+                fallback_wide=use_fallback,
+                fallback_window_before=args.fallback_window_before,
+                fallback_window_after=args.fallback_window_after,
+                fallback_unknown_fields=fallback_unknown_fields,
+                fallback_min_evidence_quotes=args.fallback_min_evidence_quotes,
             )
-            wf.write(orjson.dumps(row) + b"\n")
+            details = row.get("details") if isinstance(row.get("details"), dict) else {}
+            fallback_info = (
+                details.get("attribution_fallback")
+                if isinstance(details.get("attribution_fallback"), dict)
+                else {}
+            )
+            if fallback_info.get("triggered"):
+                fallback_used += 1
+            write_jsonl_row(wf, row)
             if args.sleep > 0:
                 time.sleep(args.sleep)
 
     print(f"Episodes seen: {len(episodes)}")
     print(f"Episodes skipped(resume): {len(episodes) - len(pending)}")
     print(f"Episodes attributed: {len(pending)}")
+    if args.fallback_wide:
+        print(f"Wide fallback max: {args.fallback_max or 'uncapped'}")
+        print(f"Wide fallback used: {fallback_used}")
     print(f"Output: {args.out}")
 
 

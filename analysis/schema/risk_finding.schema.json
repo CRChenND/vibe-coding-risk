@@ -35,6 +35,14 @@
       "type": "string",
       "enum": ["high", "medium", "low", "excluded"]
     },
+    "risk_confidence_tier": {
+      "type": "string",
+      "enum": ["high", "medium", "low", "excluded"]
+    },
+    "cwe_confidence_tier": {
+      "type": "string",
+      "enum": ["high", "medium", "low", "unmapped", "excluded"]
+    },
     "cwe": {
       "type": "array",
       "items": {"type": "string", "pattern": "^CWE-[0-9]+$"}
